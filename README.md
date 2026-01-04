@@ -308,10 +308,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- Original AWS enumeration concept from [darkarnium's gist](https://gist.github.com/darkarnium/1df59865f503355ef30672168063da4e)
+- Original GCP enumeration concept from [NicholasSpringer's thunder-ctf](https://github.com/NicholasSpringer/thunder-ctf/tree/master/scripts)
+- Original GCP enumeration concept from [andresriancho's enumerate-iam](https://github.com/andresriancho/enumerate-iam)
 - [IAM Dataset](https://github.com/iann0036/iam-dataset) by Ian Mckay for comprehensive AWS and GCP IAM mappings
-- AWS SDK JS for API definitions
-- Google Cloud IAM documentation for permission lists
 
 ## Disclaimer
 
