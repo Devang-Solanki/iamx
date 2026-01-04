@@ -309,7 +309,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - Original GCP enumeration concept from [NicholasSpringer's thunder-ctf](https://github.com/NicholasSpringer/thunder-ctf/tree/master/scripts)
-- Original GCP enumeration concept from [andresriancho's enumerate-iam](https://github.com/andresriancho/enumerate-iam)
+- Original AWS enumeration concept from [andresriancho's enumerate-iam](https://github.com/andresriancho/enumerate-iam)
 - [IAM Dataset](https://github.com/iann0036/iam-dataset) by Ian Mckay for comprehensive AWS and GCP IAM mappings
 
 ## Disclaimer
