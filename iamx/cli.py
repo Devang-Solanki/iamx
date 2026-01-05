@@ -1,5 +1,5 @@
 """
-Brute IAM CLI - Main entry point for the CLI tool.
+IAMX CLI - Main entry point for the CLI tool.
 """
 
 import click
@@ -11,12 +11,12 @@ from iamx import __version__
 
 
 @click.group()
-@click.version_option(version=__version__, prog_name="brute-iam")
+@click.version_option(version=__version__, prog_name="iamx")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
 @click.pass_context
 def cli(ctx: click.Context, verbose: bool) -> None:
     """
-    Brute IAM - Cloud IAM Permission Enumeration Tool
+    IAMX - Cloud IAM Permission Enumeration Tool
 
     A CLI tool for enumerating IAM permissions on AWS and GCP cloud platforms.
     Use this tool to discover what permissions a given set of credentials has.
@@ -93,18 +93,18 @@ def aws_enumerate(
     Examples:
 
         # Using command line options
-        brute-iam aws enumerate --access-key AKIA... --secret-key ...
+        iamx aws enumerate --access-key AKIA... --secret-key ...
 
         # Using environment variables
         export AWS_ACCESS_KEY_ID=AKIA...
         export AWS_SECRET_ACCESS_KEY=...
-        brute-iam aws enumerate
+        iamx aws enumerate
 
         # With session token (temporary credentials)
-        brute-iam aws enumerate -a ASIA... -s ... -t ...
+        iamx aws enumerate -a ASIA... -s ... -t ...
 
         # Output to JSON file
-        brute-iam aws enumerate -o json -f results.json
+        iamx aws enumerate -o json -f results.json
     """
     if not access_key or not secret_key:
         click.echo(
@@ -208,18 +208,18 @@ def gcp_enumerate(
     Examples:
 
         # Using service account key file
-        brute-iam gcp enumerate -p my-project -c service-account.json
+        iamx gcp enumerate -p my-project -c service-account.json
 
         # Using access token
-        brute-iam gcp enumerate -p my-project -t ya29...
+        iamx gcp enumerate -p my-project -t ya29...
 
         # Using environment variables
         export GOOGLE_CLOUD_PROJECT=my-project
         export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
-        brute-iam gcp enumerate
+        iamx gcp enumerate
 
         # Output to JSON file
-        brute-iam gcp enumerate -p my-project -c key.json -o json -f results.json
+        iamx gcp enumerate -p my-project -c key.json -o json -f results.json
     """
     if not credentials and not token:
         click.echo(
@@ -314,16 +314,16 @@ def generate_aws(
     Examples:
 
         # Generate from IAM dataset (recommended)
-        brute-iam generate aws
+        iamx generate aws
 
         # Generate from IAM dataset with custom URL
-        brute-iam generate aws -u https://example.com/map.json
+        iamx generate aws -u https://example.com/map.json
 
         # Generate from AWS SDK (legacy)
-        brute-iam generate aws -s sdk --sdk-path ./aws-sdk-js/apis
+        iamx generate aws -s sdk --sdk-path ./aws-sdk-js/apis
 
         # Custom output file
-        brute-iam generate aws -o custom_tests.py
+        iamx generate aws -o custom_tests.py
     """
     from iamx.aws.generator import generate_bruteforce_tests
 
@@ -401,16 +401,16 @@ def generate_gcp(
     Examples:
 
         # Generate all permissions
-        brute-iam generate gcp
+        iamx generate gcp
 
         # Generate only safe (read-only) permissions
-        brute-iam generate gcp --safe-only
+        iamx generate gcp --safe-only
 
         # Custom output file
-        brute-iam generate gcp -o custom_permissions.py
+        iamx generate gcp -o custom_permissions.py
 
         # Custom dataset URL
-        brute-iam generate gcp -u https://example.com/gcp-map.json
+        iamx generate gcp -u https://example.com/gcp-map.json
     """
     from iamx.gcp.generator import generate_gcp_permissions
 
@@ -466,11 +466,11 @@ def generate_aws_tests_legacy(
     """
     [DEPRECATED] Generate AWS bruteforce test definitions from AWS SDK.
 
-    Use 'brute-iam generate aws' instead.
+    Use 'iamx generate aws' instead.
     """
     click.echo(
         click.style("⚠️  ", fg="yellow")
-        + "This command is deprecated. Use 'brute-iam generate aws -s sdk --sdk-path ...' instead."
+        + "This command is deprecated. Use 'iamx generate aws -s sdk --sdk-path ...' instead."
     )
     
     from iamx.aws.generator import generate_bruteforce_tests
@@ -518,26 +518,53 @@ def _format_text_output(results: dict) -> str:
     lines.append(click.style("  IAM Enumeration Results", fg="cyan", bold=True))
     lines.append(click.style("=" * 60, fg="cyan"))
 
+    # Check if this is a root account
+    is_root = results.get("identity", {}).get("root_account", False)
+
     if "identity" in results:
         lines.append("\n" + click.style("📋 Identity Information:", fg="yellow", bold=True))
         for key, value in results["identity"].items():
-            lines.append(f"   {key}: {value}")
+            if key == "root_account" and value:
+                lines.append(f"   {key}: {click.style('TRUE - FULL ACCESS', fg='red', bold=True)}")
+            else:
+                lines.append(f"   {key}: {value}")
 
-    if "permissions" in results:
-        lines.append("\n" + click.style("🔓 Discovered Permissions:", fg="green", bold=True))
-        permissions = results["permissions"]
-        if isinstance(permissions, list):
-            for perm in sorted(permissions):
-                lines.append(f"   ✓ {perm}")
-        elif isinstance(permissions, dict):
-            for service, actions in sorted(permissions.items()):
-                lines.append(f"\n   {click.style(service, fg='blue', bold=True)}:")
-                if isinstance(actions, list):
-                    for action in sorted(actions):
-                        lines.append(f"      ✓ {action}")
-                elif isinstance(actions, dict):
-                    for action, data in actions.items():
-                        lines.append(f"      ✓ {action}")
+    # Special handling for root account
+    if is_root:
+        lines.append("\n" + click.style("🚨 ROOT ACCOUNT DETECTED!", fg="red", bold=True))
+        lines.append(click.style("   This account has FULL ACCESS to all AWS services.", fg="red"))
+        lines.append(click.style("   No brute-force enumeration needed.", fg="red"))
+        
+        # Show IAM permissions that were discovered
+        if "permissions" in results and "iam" in results["permissions"]:
+            lines.append("\n" + click.style("🔓 IAM Permissions Verified:", fg="green", bold=True))
+            iam_perms = results["permissions"]["iam"]
+            if isinstance(iam_perms, dict):
+                for action in sorted(iam_perms.keys()):
+                    if not action.startswith("_"):  # Skip internal notes
+                        lines.append(f"   ✓ iam.{action}")
+    else:
+        # Normal permission output for non-root accounts
+        if "permissions" in results:
+            lines.append("\n" + click.style("🔓 Discovered Permissions:", fg="green", bold=True))
+            permissions = results["permissions"]
+            if isinstance(permissions, list):
+                for perm in sorted(permissions):
+                    lines.append(f"   ✓ {perm}")
+            elif isinstance(permissions, dict):
+                for service, actions in sorted(permissions.items()):
+                    # Skip internal notes
+                    if service.startswith("_"):
+                        continue
+                    lines.append(f"\n   {click.style(service, fg='blue', bold=True)}:")
+                    if isinstance(actions, list):
+                        for action in sorted(actions):
+                            if not action.startswith("_"):
+                                lines.append(f"      ✓ {action}")
+                    elif isinstance(actions, dict):
+                        for action, data in actions.items():
+                            if not action.startswith("_"):
+                                lines.append(f"      ✓ {action}")
 
     if "errors" in results and results["errors"]:
         lines.append("\n" + click.style("⚠️  Errors:", fg="red", bold=True))
@@ -546,18 +573,24 @@ def _format_text_output(results: dict) -> str:
 
     lines.append("\n" + click.style("=" * 60, fg="cyan"))
 
+    # Calculate total permissions (excluding internal notes)
     total_perms = 0
-    if "permissions" in results:
+    if not is_root and "permissions" in results:
         if isinstance(results["permissions"], list):
-            total_perms = len(results["permissions"])
+            total_perms = len([p for p in results["permissions"] if not p.startswith("_")])
         elif isinstance(results["permissions"], dict):
-            for actions in results["permissions"].values():
+            for service, actions in results["permissions"].items():
+                if service.startswith("_"):
+                    continue
                 if isinstance(actions, list):
-                    total_perms += len(actions)
+                    total_perms += len([a for a in actions if not a.startswith("_")])
                 elif isinstance(actions, dict):
-                    total_perms += len(actions)
+                    total_perms += len([a for a in actions.keys() if not a.startswith("_")])
 
-    lines.append(f"  Total permissions discovered: {click.style(str(total_perms), fg='green', bold=True)}")
+    if is_root:
+        lines.append(f"  Access Level: {click.style('ROOT (FULL ACCESS)', fg='red', bold=True)}")
+    else:
+        lines.append(f"  Total permissions discovered: {click.style(str(total_perms), fg='green', bold=True)}")
     lines.append(click.style("=" * 60, fg="cyan"))
 
     return "\n".join(lines)

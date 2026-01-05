@@ -5,7 +5,6 @@ This module provides functionality to enumerate AWS IAM permissions
 by attempting various API calls and checking which ones succeed.
 """
 
-import json
 import logging
 import random
 import re
@@ -15,7 +14,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import boto3
 import botocore
 from botocore.client import Config
-from botocore.endpoint import MAX_POOL_CONNECTIONS
 
 from iamx.aws.bruteforce_tests import BRUTEFORCE_TESTS
 from iamx.utils.helpers import remove_metadata
@@ -70,7 +68,9 @@ class AWSEnumerator:
         logging.getLogger("boto3").setLevel(logging.WARNING)
         logging.getLogger("botocore").setLevel(logging.WARNING)
         logging.getLogger("requests").setLevel(logging.WARNING)
-        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        # Suppress urllib3 warnings including connection pool warnings
+        logging.getLogger("urllib3").setLevel(logging.ERROR)
+        logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
         # Disable SSL warnings
         import urllib3
@@ -102,7 +102,17 @@ class AWSEnumerator:
             results["errors"].append(f"IAM enumeration error: {str(e)}")
             self.logger.error(f"IAM enumeration failed: {e}")
 
-        # Then, brute-force common API calls
+        # Check if this is a root account - if so, skip brute-force enumeration
+        # Root accounts have full access to all AWS services
+        if results["identity"].get("root_account", False):
+            self.logger.warning("🚨 ROOT ACCOUNT DETECTED! Skipping brute-force enumeration.")
+            self.logger.warning("Root credentials have FULL ACCESS to all AWS services and resources.")
+            results["permissions"]["bruteforce"] = {
+                "_note": "Brute-force enumeration skipped - root account has full access to all AWS services"
+            }
+            return results
+
+        # Then, brute-force common API calls (only for non-root accounts)
         try:
             bruteforce_results = self._enumerate_using_bruteforce()
             results["permissions"]["bruteforce"] = bruteforce_results
@@ -133,7 +143,7 @@ class AWSEnumerator:
             connect_timeout=5,
             read_timeout=5,
             retries={"max_attempts": 3},
-            max_pool_connections=MAX_POOL_CONNECTIONS * 2,
+            max_pool_connections=self.MAX_THREADS + 5,  # Match thread count + buffer
         )
 
         try:
@@ -217,17 +227,20 @@ class AWSEnumerator:
                 results["identity"]["arn_path"] = arn_path
             return results
 
-        # Check for root account
-        if "UserName" not in user.get("User", {}):
-            if user.get("User", {}).get("Arn", "").endswith(":root"):
-                self.logger.warning("Found root credentials!")
+        user_obj = user.get("User", {})
+        if user_obj:
+            arn = user_obj.get("Arn")
+            user_name = user_obj.get("UserName")
+            results["identity"]["arn"] = arn
+            
+            # Handle root account explicitly
+            if arn and arn.endswith(":root"):
+                results["identity"]["user_name"] = "root"
                 results["identity"]["root_account"] = True
                 return results
-            return results
-
-        user_name = user["User"]["UserName"]
-        results["identity"]["user_name"] = user_name
-        results["identity"]["arn"] = user["User"].get("Arn")
+            else:
+                results["identity"]["user_name"] = user_name
+                results["identity"]["root_account"] = False
 
         # Get attached user policies
         try:

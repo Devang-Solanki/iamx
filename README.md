@@ -1,7 +1,7 @@
-# iamX
+# IAMX
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-%20%20GNU%20GPLv3%20-green)](https://opensource.org/licenses/MIT)
 
 A powerful CLI tool for enumerating IAM permissions on AWS and GCP cloud platforms. Discover what permissions a given set of credentials actually has through brute-force API testing.
 
@@ -172,26 +172,22 @@ Options:
 ============================================================
 
 📋 Identity Information:
-   user_name: admin-user
-   arn: arn:aws:iam::123456789012:user/admin-user
-   account_id: 123456789012
+   root_account: False
+   arn: arn:aws:iam::762876141233:userstorage
+   arn_id: 762876141233
+   arn_path: user/storage
 
 🔓 Discovered Permissions:
 
-   ec2:
-      ✓ describe_instances
-      ✓ describe_security_groups
-      ✓ describe_vpcs
-
-   s3:
-      ✓ list_buckets
+   bruteforce:
+      ✓ sts.get_caller_identity
+      ✓ sts.get_session_token
+      ✓ dynamodb.describe_endpoints
 
    iam:
-      ✓ get_user
-      ✓ list_users
 
 ============================================================
-  Total permissions discovered: 6
+  Total permissions discovered: 3
 ============================================================
 ```
 

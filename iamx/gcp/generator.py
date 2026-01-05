@@ -26,7 +26,7 @@ The GCP IAM dataset has the structure:
 import json
 import os
 import urllib.request
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 
 # GCP IAM Dataset URL
