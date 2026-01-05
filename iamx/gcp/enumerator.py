@@ -6,7 +6,7 @@ by testing which permissions the provided credentials have.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from iamx.gcp.permissions import GCP_PERMISSIONS
 
@@ -84,6 +84,66 @@ class GCPEnumerator:
 
         return self._credentials
 
+    def _check_api_enabled(
+        self, credentials: Any, api_name: str = "cloudresourcemanager.googleapis.com"
+    ) -> Tuple[bool, str]:
+        """
+        Check if a GCP API is enabled for the project.
+
+        Args:
+            credentials: Google credentials object
+            api_name: The API service name to check
+
+        Returns:
+            Tuple of (is_enabled, error_message)
+        """
+        try:
+            from googleapiclient import discovery
+            from googleapiclient.errors import HttpError
+
+            # Build Service Usage API client
+            service_usage = discovery.build(
+                "serviceusage",
+                "v1",
+                credentials=credentials,
+            )
+
+            # Check if the API is enabled
+            service_name = f"projects/{self.project_id}/services/{api_name}"
+
+            try:
+                response = service_usage.services().get(name=service_name).execute()
+                state = response.get("state", "DISABLED")
+
+                if state == "ENABLED":
+                    return True, ""
+                else:
+                    return False, (
+                        f"❌ {api_name} is not enabled for project '{self.project_id}'.\n"
+                        f"   Enable it at: https://console.developers.google.com/apis/api/{api_name}/overview?project={self.project_id}"
+                    )
+            except HttpError as e:
+                if e.resp.status == 403:
+                    # Can't check API status - might be permission issue or API disabled
+                    error_details = str(e)
+                    if "SERVICE_DISABLED" in error_details:
+                        return False, (
+                            f"❌ Service Usage API is not enabled. Cannot check if {api_name} is enabled.\n"
+                            f"   Enable Service Usage API first, or enable {api_name} directly at:\n"
+                            f"   https://console.developers.google.com/apis/api/{api_name}/overview?project={self.project_id}"
+                        )
+                    # Permission denied - we'll try anyway and let the actual call fail with better error
+                    return True, ""
+                raise
+
+        except ImportError:
+            # Can't check - proceed anyway
+            return True, ""
+        except Exception as e:
+            self.logger.debug(f"Could not check API status: {e}")
+            # Can't check - proceed anyway and let actual call fail
+            return True, ""
+
     def enumerate(self) -> Dict[str, Any]:
         """
         Enumerate all GCP IAM permissions.
@@ -103,8 +163,20 @@ class GCPEnumerator:
 
         try:
             from googleapiclient import discovery
+            from googleapiclient.errors import HttpError
 
             credentials = self._get_credentials()
+
+            # Check if Cloud Resource Manager API is enabled
+            self.logger.info("Checking if Cloud Resource Manager API is enabled...")
+            api_enabled, error_msg = self._check_api_enabled(credentials)
+
+            if not api_enabled:
+                self.logger.error(error_msg)
+                results["errors"].append(error_msg)
+                return results
+
+            self.logger.info("✓ Cloud Resource Manager API is enabled")
 
             # Build Cloud Resource Manager API client
             crm_api = discovery.build(
@@ -147,6 +219,20 @@ class GCPEnumerator:
                         self.logger.info(
                             f"Chunk {i + 1}: Found {len(response['permissions'])} permissions"
                         )
+
+                except HttpError as e:
+                    if e.resp.status == 403 and "SERVICE_DISABLED" in str(e):
+                        error_msg = (
+                            f"❌ Cloud Resource Manager API is not enabled for project '{self.project_id}'.\n"
+                            f"   Enable it at: https://console.developers.google.com/apis/api/cloudresourcemanager.googleapis.com/overview?project={self.project_id}"
+                        )
+                        self.logger.error(error_msg)
+                        results["errors"].append(error_msg)
+                        return results
+                    else:
+                        error_msg = f"Error testing chunk {i + 1}: {str(e)}"
+                        self.logger.error(error_msg)
+                        results["errors"].append(error_msg)
 
                 except Exception as e:
                     error_msg = f"Error testing chunk {i + 1}: {str(e)}"
