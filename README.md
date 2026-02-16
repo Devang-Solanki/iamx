@@ -3,13 +3,14 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-%20%20GNU%20GPLv3%20-green)](https://opensource.org/licenses/MIT)
 
-A powerful CLI tool for enumerating IAM permissions on AWS and GCP cloud platforms. Discover what permissions a given set of credentials actually has through brute-force API testing.
+A powerful CLI tool for enumerating IAM permissions on AWS, GCP, and Azure cloud platforms. Discover what permissions a given set of credentials actually has through brute-force API testing.
 
 ## Features
 
 - 🔍 **AWS IAM Enumeration**: Test AWS credentials against 400+ services and thousands of API operations
 - 🔍 **GCP IAM Enumeration**: Test GCP credentials against 4000+ IAM permissions
-- 🚀 **Multi-threaded**: Fast parallel execution for AWS API testing
+- 🧪 **Azure RBAC Enumeration** *(Experimental)*: Test Azure credentials against 2000+ API operations
+- 🚀 **Multi-threaded**: Fast parallel execution for API testing
 - 📊 **Multiple Output Formats**: JSON or human-readable text output
 - 🔧 **Auto-Update**: Generate test definitions from [IAM Dataset](https://github.com/iann0036/iam-dataset)
 - 🛡️ **Safe**: Only uses read-only operations (list, describe, get)
@@ -25,7 +26,10 @@ pip install iamx[aws]
 # Install with GCP support
 pip install iamx[gcp]
 
-# Install with both AWS and GCP support
+# Install with Azure support (experimental)
+pip install iamx[azure]
+
+# Install with all cloud providers
 pip install iamx[all]
 ```
 
@@ -82,6 +86,38 @@ iamx gcp enumerate -p my-project -t ya29...
 iamx gcp enumerate -p my-project -c key.json -o json -f results.json
 ```
 
+### Azure Enumeration *(Experimental)*
+
+```bash
+# Using credentials JSON file
+iamx azure enumerate --credentials-file azure-creds.json
+
+# Using service principal (client credentials)
+iamx azure enumerate -t <tenant-id> -c <client-id> --client-secret <secret>
+
+# Using environment variables
+export AZURE_TENANT_ID=...
+export AZURE_CLIENT_ID=...
+export AZURE_CLIENT_SECRET=...
+iamx azure enumerate
+
+# With specific subscription
+iamx azure enumerate -s <subscription-id>
+
+# Output to JSON file
+iamx azure enumerate -o json -f results.json
+```
+
+**Credentials JSON file format:**
+```json
+{
+    "clientId": "your-client-id",
+    "clientSecret": "your-client-secret",
+    "tenantId": "your-tenant-id",
+    "subscriptionId": "optional-subscription-id"
+}
+```
+
 ## Usage
 
 ### Command Structure
@@ -97,6 +133,7 @@ Options:
 Commands:
   aws       AWS IAM permission enumeration commands
   gcp       GCP IAM permission enumeration commands
+  azure     Azure RBAC permission enumeration commands (experimental)
   generate  Generate bruteforce test definitions
 ```
 
@@ -133,6 +170,26 @@ Options:
   --help                     Show this message and exit.
 ```
 
+### Azure Commands *(Experimental)*
+
+#### Enumerate Permissions
+
+```bash
+iamx azure enumerate [OPTIONS]
+
+Options:
+  -s, --subscription TEXT    Azure Subscription ID (or set AZURE_SUBSCRIPTION_ID env var)
+  -t, --tenant TEXT          Azure AD Tenant ID (or set AZURE_TENANT_ID env var)
+  -c, --client-id TEXT       Azure AD Application (Client) ID (or set AZURE_CLIENT_ID env var)
+  --client-secret TEXT       Azure AD Client Secret (or set AZURE_CLIENT_SECRET env var)
+  --credentials-file PATH    Path to JSON file with Azure credentials
+  --token TEXT               Pre-obtained access token for authentication
+  -g, --resource-group TEXT  Resource group to test against (optional)
+  -o, --output [json|text]   Output format (default: text)
+  -f, --output-file PATH     Write output to file instead of stdout
+  --help                     Show this message and exit.
+```
+
 ### Generate Commands
 
 The generate commands allow you to update the test definitions from the [IAM Dataset](https://github.com/iann0036/iam-dataset) repository, which maintains comprehensive mappings of cloud API methods to IAM permissions.
@@ -160,6 +217,18 @@ Options:
   -o, --output-file PATH  Output file path (default: iamx/gcp/permissions.py)
   --safe-only             Only include safe (read-only) permissions
   --help                  Show this message and exit.
+```
+
+#### Generate Azure Operations
+
+```bash
+iamx generate azure [OPTIONS]
+
+Options:
+  -s, --source-file PATH    Path to local Azure API specs JSON file
+  -u, --dataset-url TEXT    URL to Azure API dataset JSON
+  -o, --output-file PATH    Output file path (default: iamx/azure/operations.py)
+  --help                    Show this message and exit.
 ```
 
 ## Output Examples
@@ -237,6 +306,17 @@ Options:
 2. Tests 4000+ GCP IAM permissions in batches of 100
 3. Returns all permissions the credentials have on the specified project
 
+### Azure Enumeration *(Experimental)*
+
+1. **Role Assignment Discovery**: Retrieves role assignments for the authenticated identity
+2. **API Operation Testing**: Tests 2000+ Azure REST API operations (GET requests only)
+   - Only uses read-only operations (GET methods)
+   - Operations are grouped by resource provider
+   - Multi-threaded execution (10 threads by default)
+   - Randomized order to avoid detection patterns
+
+> ⚠️ **Note**: Azure support is experimental. The author has limited Azure experience and welcomes community contributions to improve this feature. See [Contributing](#contributing) section below.
+
 ## Security Considerations
 
 - **Read-Only Operations**: This tool only uses read-only API operations and will not modify any resources
@@ -273,6 +353,18 @@ iamx generate gcp --safe-only
 # - Download the latest GCP IAM mappings from GitHub
 # - Extract all permissions from API methods
 # - Generate iamx/gcp/permissions.py
+```
+
+### Update Azure Operations
+
+```bash
+# Generate from IAM dataset (downloads automatically)
+iamx generate azure
+
+# This will:
+# - Download the latest Azure API specs from GitHub
+# - Extract all GET operations (read-only)
+# - Generate iamx/azure/operations.py
 ```
 
 ### Legacy: Generate from AWS SDK

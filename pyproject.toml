@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "iamx"
 version = "1.0.0"
-description = "Cloud IAM Permission Enumeration Tool for AWS and GCP"
+description = "Cloud IAM Permission Enumeration Tool for AWS, GCP, and Azure"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -15,7 +15,9 @@ authors = [
 keywords = [
     "aws",
     "gcp",
+    "azure",
     "iam",
+    "rbac",
     "security",
     "enumeration",
     "permissions",
@@ -52,10 +54,18 @@ gcp = [
     "google-api-python-client>=2.150.0",
     "google-auth>=2.35.0",
 ]
+azure = [
+    "azure-identity>=1.19.0",
+    "azure-mgmt-resource>=23.2.0",
+    "requests>=2.32.0",
+]
 all = [
     "boto3>=1.35.0",
     "google-api-python-client>=2.150.0",
     "google-auth>=2.35.0",
+    "azure-identity>=1.19.0",
+    "azure-mgmt-resource>=23.2.0",
+    "requests>=2.32.0",
 ]
 dev = [
     "pytest>=8.0.0",
