@@ -17,20 +17,10 @@ A powerful CLI tool for enumerating IAM permissions on AWS, GCP, and Azure cloud
 
 ## Installation
 
-### From PyPI (recommended)
+### From pipx (recommended)
 
 ```bash
-# Install with AWS support
-pip install iamx[aws]
-
-# Install with GCP support
-pip install iamx[gcp]
-
-# Install with Azure support (experimental)
-pip install iamx[azure]
-
-# Install with all cloud providers
-pip install iamx[all]
+pipx install git+https://github.com/devang-solanki/iamx
 ```
 
 ### From Source
