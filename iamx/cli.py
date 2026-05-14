@@ -500,6 +500,11 @@ def generate(ctx: click.Context) -> None:
     default="iamx/aws/bruteforce_tests.py",
     help="Output file path (default: iamx/aws/bruteforce_tests.py)",
 )
+@click.option(
+    "--privesc-url",
+    default="https://pathfinding.cloud/paths.json",
+    help="URL to fetch privilege escalation paths from (default: https://pathfinding.cloud/paths.json)",
+)
 @click.pass_context
 def generate_aws(
     ctx: click.Context,
@@ -507,12 +512,14 @@ def generate_aws(
     sdk_path: Optional[str],
     dataset_url: str,
     output_file: str,
+    privesc_url: str,
 ) -> None:
     """
-    Generate AWS bruteforce test definitions.
+    Generate AWS bruteforce test definitions and update privilege escalation paths.
 
     This command generates a Python file containing safe AWS API operations
-    to test for permission enumeration.
+    to test for permission enumeration, and syncs the latest privilege
+    escalation paths from pathfinding.cloud.
 
     Sources:
         - iam-dataset: Downloads from https://github.com/iann0036/iam-dataset (recommended)
@@ -520,7 +527,7 @@ def generate_aws(
 
     Examples:
 
-        # Generate from IAM dataset (recommended)
+        # Generate from IAM dataset and update privesc paths (recommended)
         iamx generate aws
 
         # Generate from IAM dataset with custom URL
@@ -532,7 +539,7 @@ def generate_aws(
         # Custom output file
         iamx generate aws -o custom_tests.py
     """
-    from iamx.aws.generator import generate_bruteforce_tests
+    from iamx.aws.generator import generate_bruteforce_tests, update_privesc_paths
 
     verbose = ctx.obj.get("verbose", False)
 
@@ -568,6 +575,19 @@ def generate_aws(
             err=True,
         )
         sys.exit(1)
+
+    click.echo(click.style("🔧 ", fg="cyan") + "Updating privilege escalation paths...")
+    click.echo(click.style("📥 ", fg="cyan") + f"Fetching from: {privesc_url}")
+    try:
+        added, updated = update_privesc_paths(url=privesc_url, verbose=verbose)
+        click.echo(
+            click.style("✅ ", fg="green")
+            + f"Privilege escalation paths — {added} added, {updated} updated."
+        )
+    except Exception as e:
+        click.echo(
+            click.style("⚠️  ", fg="yellow") + f"Privilege escalation update failed: {e}"
+        )
 
 
 @generate.command("gcp")
@@ -911,6 +931,28 @@ def _format_text_output(results: dict) -> str:
                         for action, data in sorted(actions.items()):
                             if not action.startswith("_"):
                                 lines.append(f"      ✓ {action}")
+
+    privesc = results.get("privilege_escalation", {})
+    if privesc.get("paths_found", 0) > 0:
+        lines.append("\n" + click.style("🚨 Privilege Escalation Paths Detected:", fg="red", bold=True))
+        category_labels = {
+            "new-passrole": "PassRole → New Resource",
+            "existing-passrole": "PassRole → Existing Resource",
+            "self-escalation": "Self Escalation",
+            "principal-access": "Direct Principal Access",
+        }
+        for path in privesc["paths"]:
+            cat = category_labels.get(path["category"], path["category"])
+            lines.append(
+                f"\n   {click.style(path['name'], fg='red', bold=True)}"
+                f"  [{click.style(cat, fg='yellow')}]"
+            )
+            lines.append(f"   ID: {path['id']}")
+            lines.append("   Required: " + ", ".join(path["required_permissions"]))
+    elif "privilege_escalation" in results:
+        lines.append(
+            "\n" + click.style("✅ No privilege escalation paths found.", fg="green")
+        )
 
     if "errors" in results and results["errors"]:
         lines.append("\n" + click.style("⚠️  Errors:", fg="red", bold=True))
