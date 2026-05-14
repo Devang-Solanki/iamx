@@ -16,6 +16,7 @@ import botocore
 from botocore.client import Config
 
 from iamx.aws.bruteforce_tests import BRUTEFORCE_TESTS
+from iamx.aws.privesc import check_privesc, extract_permissions
 from iamx.utils.helpers import remove_metadata
 
 
@@ -119,6 +120,22 @@ class AWSEnumerator:
         except Exception as e:
             results["errors"].append(f"Bruteforce enumeration error: {str(e)}")
             self.logger.error(f"Bruteforce enumeration failed: {e}")
+
+        # Check for privilege escalation paths using discovered permissions
+        try:
+            permissions_set = extract_permissions(results)
+            privesc_matches = check_privesc(permissions_set)
+            results["privilege_escalation"] = {
+                "paths_found": len(privesc_matches),
+                "paths": privesc_matches,
+            }
+            if privesc_matches:
+                self.logger.warning(
+                    f"⚠️  Found {len(privesc_matches)} potential privilege escalation path(s)!"
+                )
+        except Exception as e:
+            results["errors"].append(f"Privilege escalation check error: {str(e)}")
+            self.logger.error(f"Privilege escalation check failed: {e}")
 
         return results
 

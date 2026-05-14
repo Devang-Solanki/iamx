@@ -391,3 +391,62 @@ def _extract_operations(api_json: Dict[str, Any]) -> List[str]:
     operations.sort()
 
     return operations
+
+
+PRIVESC_PATHS_URL = "https://pathfinding.cloud/paths.json"
+_PRIVESC_DATA_FILE = os.path.join(os.path.dirname(__file__), "data", "privesc_paths.json")
+
+
+def update_privesc_paths(
+    url: str = PRIVESC_PATHS_URL,
+    data_file: str = _PRIVESC_DATA_FILE,
+    verbose: bool = False,
+) -> tuple[int, int]:
+    """
+    Fetch privilege escalation paths from the remote source and merge into the local data file.
+
+    Merges by entry ID: new entries are appended, existing ones are updated in place.
+
+    Args:
+        url: URL to fetch paths from
+        data_file: Path to the local privesc_paths.json
+        verbose: Enable verbose logging
+
+    Returns:
+        Tuple of (added, updated) counts
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"Fetching privilege escalation paths from {url}")
+    with urllib.request.urlopen(url) as response:
+        remote: List[Dict[str, Any]] = json.loads(response.read().decode("utf-8"))
+
+    with open(data_file) as f:
+        local: List[Dict[str, Any]] = json.load(f)
+
+    local_by_id: Dict[str, Dict[str, Any]] = {entry["id"]: entry for entry in local}
+
+    added = 0
+    updated = 0
+    for entry in remote:
+        eid = entry.get("id")
+        if not eid:
+            continue
+        if eid in local_by_id:
+            if local_by_id[eid] != entry:
+                local_by_id[eid] = entry
+                updated += 1
+                if verbose:
+                    logger.info(f"Updated: {eid}")
+        else:
+            local_by_id[eid] = entry
+            added += 1
+            if verbose:
+                logger.info(f"Added: {eid}")
+
+    merged = list(local_by_id.values())
+    with open(data_file, "w") as f:
+        json.dump(merged, f, indent=2)
+
+    return added, updated

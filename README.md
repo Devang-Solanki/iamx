@@ -3,16 +3,17 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-%20%20GNU%20GPLv3%20-green)](https://opensource.org/licenses/MIT)
 
-A powerful CLI tool for enumerating IAM permissions on AWS, GCP, and Azure cloud platforms. Discover what permissions a given set of credentials actually has through brute-force API testing.
+A powerful CLI tool for enumerating IAM permissions across AWS, GCP, and Azure cloud platforms. Discover what permissions a given set of credentials actually has — and for AWS, whether those permissions can be abused to escalate access.
 
 ## Features
 
 - 🔍 **AWS IAM Enumeration**: Test AWS credentials against 400+ services and thousands of API operations
 - 🔍 **GCP IAM Enumeration**: Test GCP credentials against 4000+ IAM permissions
 - 🧪 **Azure RBAC Enumeration** *(Experimental)*: Test Azure credentials against 2000+ API operations
+- 🚨 **Privilege Escalation Detection**: Automatically checks discovered AWS permissions against 66+ known escalation paths (powered by [pathfinding.cloud](https://pathfinding.cloud))
 - 🚀 **Multi-threaded**: Fast parallel execution for API testing
 - 📊 **Multiple Output Formats**: JSON or human-readable text output
-- 🔧 **Auto-Update**: Generate test definitions from [IAM Dataset](https://github.com/iann0036/iam-dataset)
+- 🔧 **Auto-Update**: Sync bruteforce test definitions from [IAM Dataset](https://github.com/iann0036/iam-dataset) and privilege escalation paths from [pathfinding.cloud](https://pathfinding.cloud)
 - 🛡️ **Safe**: Only uses read-only operations (list, describe, get)
 
 ## Installation
@@ -28,7 +29,7 @@ pipx install git+https://github.com/devang-solanki/iamx
 ```bash
 git clone https://github.com/Devang-Solanki/iamx.git
 cd iamx
-pip install -e ".[all]"
+pip install -e .
 ```
 
 ### Development Installation
@@ -36,7 +37,7 @@ pip install -e ".[all]"
 ```bash
 git clone https://github.com/Devang-Solanki/iamx.git
 cd iamx
-pip install -e ".[all,dev]"
+pip install -e ".[dev]"
 ```
 
 ## Quick Start
@@ -194,6 +195,8 @@ Options:
   --sdk-path PATH                 Path to aws-sdk-js/apis directory (required if source=sdk)
   -u, --dataset-url TEXT          URL to IAM dataset JSON
   -o, --output-file PATH          Output file path (default: iamx/aws/bruteforce_tests.py)
+  --privesc-url TEXT              URL to fetch privilege escalation paths from
+                                  (default: https://pathfinding.cloud/paths.json)
   --help                          Show this message and exit.
 ```
 
@@ -231,22 +234,28 @@ Options:
 ============================================================
 
 📋 Identity Information:
-   root_account: False
-   arn: arn:aws:iam::762876141233:userstorage
-   arn_id: 762876141233
-   arn_path: user/storage
+   arn: arn:aws:iam::123456789012:user/deploy-user
+   user_name: deploy-user
 
 🔓 Discovered Permissions:
 
    bruteforce:
       ✓ sts.get_caller_identity
       ✓ sts.get_session_token
-      ✓ dynamodb.describe_endpoints
+      ✓ ec2.describe_instances
+      ✓ lambda.list_functions
 
    iam:
+      ✓ get_user
+      ✓ list_attached_user_policies
+
+🚨 Privilege Escalation Paths Detected:
+   iam:PassRole + lambda:CreateFunction + lambda:InvokeFunction  [PassRole → New Resource]
+   ID: lambda-001
+   Required: iam:PassRole, lambda:CreateFunction, lambda:InvokeFunction
 
 ============================================================
-  Total permissions discovered: 3
+  Total permissions discovered: 6
 ============================================================
 ```
 
@@ -255,19 +264,30 @@ Options:
 ```json
 {
   "identity": {
-    "user_name": "admin-user",
-    "arn": "arn:aws:iam::123456789012:user/admin-user",
-    "account_id": "123456789012"
+    "user_name": "deploy-user",
+    "arn": "arn:aws:iam::123456789012:user/deploy-user"
   },
   "permissions": {
     "iam": {
-      "get_user": {...},
-      "list_users": {...}
+      "get_user": {},
+      "list_attached_user_policies": {}
     },
     "bruteforce": {
-      "ec2.describe_instances": {...},
-      "s3.list_buckets": {...}
+      "ec2.describe_instances": {},
+      "s3.list_buckets": {}
     }
+  },
+  "privilege_escalation": {
+    "paths_found": 1,
+    "paths": [
+      {
+        "id": "lambda-001",
+        "name": "iam:PassRole + lambda:CreateFunction + lambda:InvokeFunction",
+        "category": "new-passrole",
+        "description": "...",
+        "required_permissions": ["iam:PassRole", "lambda:CreateFunction", "lambda:InvokeFunction"]
+      }
+    ]
   },
   "errors": []
 }
@@ -289,6 +309,12 @@ Options:
    - Operations that require parameters are excluded
    - Multi-threaded execution (25 threads by default)
    - Randomized order to avoid detection patterns
+
+3. **Privilege Escalation Detection**: After enumeration, checks the discovered permissions against 66+ known escalation paths:
+   - Parses permissions from both brute-force results and any retrieved IAM policy documents
+   - Handles wildcards (`*`, `iam:*`) correctly
+   - Powered by [pathfinding.cloud](https://pathfinding.cloud) — paths are kept up to date via `iamx generate aws`
+   - Covers four escalation categories: PassRole (new resource), PassRole (existing resource), self-escalation, and direct principal access
 
 ### GCP Enumeration
 
@@ -321,13 +347,18 @@ The tool can automatically download and generate test definitions from the [IAM 
 ### Update AWS Tests (Recommended)
 
 ```bash
-# Generate from IAM dataset (downloads automatically)
+# Generate from IAM dataset and sync privilege escalation paths
 iamx generate aws
 
 # This will:
 # - Download the latest AWS IAM mappings from GitHub
 # - Extract all list_*, describe_*, get_* operations
 # - Generate iamx/aws/bruteforce_tests.py
+# - Fetch the latest privilege escalation paths from pathfinding.cloud
+# - Merge new/updated paths into the local privesc database
+
+# Use a custom privesc source URL
+iamx generate aws --privesc-url https://pathfinding.cloud/paths.json
 ```
 
 ### Update GCP Permissions
@@ -389,6 +420,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Original GCP enumeration concept from [NicholasSpringer's thunder-ctf](https://github.com/NicholasSpringer/thunder-ctf/tree/master/scripts)
 - Original AWS enumeration concept from [andresriancho's enumerate-iam](https://github.com/andresriancho/enumerate-iam)
 - [IAM Dataset](https://github.com/iann0036/iam-dataset) by Ian Mckay for comprehensive AWS and GCP IAM mappings
+- [pathfinding.cloud](https://pathfinding.cloud) for the AWS privilege escalation path database
 
 ## Disclaimer
 
