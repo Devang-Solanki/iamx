@@ -19,6 +19,25 @@ from iamx.aws.bruteforce_tests import BRUTEFORCE_TESTS
 from iamx.aws.privesc import check_privesc, extract_permissions
 from iamx.utils.helpers import remove_metadata
 
+# Error codes that mean the credentials are fundamentally invalid — no point continuing
+FATAL_ERROR_CODES = {
+    "InvalidAccessKeyId",
+    "InvalidClientTokenId",
+    "AuthFailure",
+    "SignatureDoesNotMatch",
+    "ExpiredToken",
+    "ExpiredTokenException",
+    "TokenRefreshRequired",
+}
+
+
+class FatalAWSError(Exception):
+    """Raised when AWS returns an error that makes further enumeration pointless."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(message)
+
 
 class AWSEnumerator:
     """
@@ -117,6 +136,10 @@ class AWSEnumerator:
         try:
             bruteforce_results = self._enumerate_using_bruteforce()
             results["permissions"]["bruteforce"] = bruteforce_results
+        except FatalAWSError as e:
+            results["errors"].append(f"[{e.code}] {e}")
+            self.logger.error(f"Stopping enumeration — invalid credentials: [{e.code}] {e}")
+            return results
         except Exception as e:
             results["errors"].append(f"Bruteforce enumeration error: {str(e)}")
             self.logger.error(f"Bruteforce enumeration failed: {e}")
@@ -414,7 +437,11 @@ class AWSEnumerator:
                 if completed % 1000 == 0:
                     self.logger.info(f"Progress: {completed}/{total_tests} tests completed")
 
-                result = future.result()
+                try:
+                    result = future.result()
+                except FatalAWSError:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise
                 if result:
                     key, response = result
                     results[key] = response
@@ -469,8 +496,12 @@ class AWSEnumerator:
             self.logger.info(f"-- {service_name}.{operation_name}() worked!")
             key = f"{service_name}.{operation_name}"
             return key, remove_metadata(response)
+        except botocore.exceptions.ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "")
+            if code in FATAL_ERROR_CODES:
+                raise FatalAWSError(code, str(e)) from e
+            return None
         except (
-            botocore.exceptions.ClientError,
             botocore.exceptions.EndpointConnectionError,
             botocore.exceptions.ConnectTimeoutError,
             botocore.exceptions.ReadTimeoutError,
