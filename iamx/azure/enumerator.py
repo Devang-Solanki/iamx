@@ -25,6 +25,10 @@ except ImportError:
     AZURE_AVAILABLE = False
 
 
+class FatalAzureError(Exception):
+    """Raised when Azure returns a 401, meaning credentials are invalid or expired."""
+
+
 class AzureEnumerator:
     """
     Azure Permission Enumerator.
@@ -195,8 +199,13 @@ class AzureEnumerator:
             results["permissions"]["role_assignments"] = role_info
 
             # Brute-force API operations
-            bruteforce_results = self._enumerate_using_bruteforce()
-            results["permissions"]["api_operations"] = bruteforce_results
+            try:
+                bruteforce_results = self._enumerate_using_bruteforce()
+                results["permissions"]["api_operations"] = bruteforce_results
+            except FatalAzureError as e:
+                results["errors"].append(str(e))
+                self.logger.error(f"Stopping enumeration — invalid credentials: {e}")
+                return results
 
         except Exception as e:
             error_msg = f"Enumeration failed: {str(e)}"
@@ -328,7 +337,11 @@ class AzureEnumerator:
                 if completed % 100 == 0:
                     self.logger.info(f"Progress: {completed}/{total_tests} tests completed")
 
-                result = future.result()
+                try:
+                    result = future.result()
+                except FatalAzureError:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise
                 if result:
                     key, response = result
                     results[key] = response
@@ -414,6 +427,10 @@ class AzureEnumerator:
                     "method": operation["method"],
                     "status_code": response.status_code,
                 }
+            elif response.status_code == 401:
+                raise FatalAzureError(
+                    f"Invalid or expired credentials (HTTP 401) for {operation['operation_id']}"
+                )
             elif response.status_code == 403:
                 # Access denied - no permission
                 return None

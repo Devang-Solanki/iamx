@@ -221,7 +221,12 @@ class GCPEnumerator:
                         )
 
                 except HttpError as e:
-                    if e.resp.status == 403 and "SERVICE_DISABLED" in str(e):
+                    if e.resp.status == 401:
+                        error_msg = f"Invalid or expired credentials: {str(e)}"
+                        self.logger.error(error_msg)
+                        results["errors"].append(error_msg)
+                        return results
+                    elif e.resp.status == 403 and "SERVICE_DISABLED" in str(e):
                         error_msg = (
                             f"❌ Cloud Resource Manager API is not enabled for project '{self.project_id}'.\n"
                             f"   Enable it at: https://console.developers.google.com/apis/api/cloudresourcemanager.googleapis.com/overview?project={self.project_id}"
