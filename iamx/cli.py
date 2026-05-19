@@ -911,9 +911,18 @@ def _format_text_output(results: dict) -> str:
                 for perm in sorted(str_perms):
                     lines.append(f"   ✓ {perm}")
             elif isinstance(permissions, dict):
+                # Check for high-value IAM finding before listing permissions
+                iam_section = permissions.get("iam", {})
+                if isinstance(iam_section, dict) and "get_account_authorization_details" in iam_section:
+                    lines.append(
+                        "\n   " + click.style("⚠️  High Value: ", fg="yellow", bold=True)
+                        + "get_account_authorization_details succeeded — "
+                        + "full account IAM policies are readable"
+                    )
+
                 for service, actions in sorted(permissions.items()):
-                    # Skip internal notes
-                    if service.startswith("_"):
+                    # Skip internal notes and the iam enumeration section
+                    if service.startswith("_") or service == "iam":
                         continue
                     lines.append(f"\n   {click.style(service, fg='blue', bold=True)}:")
                     if isinstance(actions, list):
