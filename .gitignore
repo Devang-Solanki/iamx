@@ -83,4 +83,5 @@ Thumbs.db
 # Project specific
 *.json
 !pyproject.toml
+!iamx/aws/data/*.json
 aws-sdk-js/
