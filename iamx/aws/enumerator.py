@@ -17,7 +17,7 @@ from botocore.client import Config
 
 from iamx.aws.bruteforce_tests import BRUTEFORCE_TESTS
 from iamx.aws.privesc import check_privesc, extract_permissions
-from iamx.aws.resource_tests import DRYRUN_TESTS, RESOURCE_TESTS
+from iamx.aws.resource_tests import DRYRUN_TESTS
 from iamx.aws.service_groups import SERVICE_GROUPS
 from iamx.utils.helpers import remove_metadata
 
@@ -59,7 +59,6 @@ class AWSEnumerator:
         region: str = "us-east-1",
         verbose: bool = False,
         groups: Optional[List[str]] = None,
-        known_values: Optional[Dict[str, str]] = None,
     ):
         """
         Initialize the AWS Enumerator.
@@ -71,14 +70,12 @@ class AWSEnumerator:
             region: AWS Region
             verbose: Enable verbose logging
             groups: Limit brute-force to specific service groups (e.g. ["serverless", "iam"])
-            known_values: Resource values for parametrized tests (e.g. {"bucket": "my-bucket"})
         """
         self.access_key = access_key
         self.secret_key = secret_key
         self.session_token = session_token
         self.region = region
         self.verbose = verbose
-        self.known_values: Dict[str, str] = known_values or {}
 
         # Resolve service groups into a flat set of service names
         if groups:
@@ -158,20 +155,6 @@ class AWSEnumerator:
         except Exception as e:
             results["errors"].append(f"Bruteforce enumeration error: {str(e)}")
             self.logger.error(f"Bruteforce enumeration failed: {e}")
-
-        # Known-resource parametrized tests
-        if self.known_values:
-            try:
-                resource_results = self._enumerate_using_resources()
-                results["permissions"]["bruteforce"].update(resource_results)
-                self.logger.info(f"Resource enumeration complete. Found {len(resource_results)} additional permissions.")
-            except FatalAWSError as e:
-                results["errors"].append(f"[{e.code}] {e}")
-                self.logger.error(f"Stopping enumeration — invalid credentials: [{e.code}] {e}")
-                return results
-            except Exception as e:
-                results["errors"].append(f"Resource enumeration error: {str(e)}")
-                self.logger.error(f"Resource enumeration failed: {e}")
 
         # EC2 DryRun permission tests
         try:
@@ -559,52 +542,6 @@ class AWSEnumerator:
             self.logger.debug(f"Unexpected error for {service_name}.{operation_name}: {e}")
             return None
 
-    def _enumerate_using_resources(self) -> Dict[str, Any]:
-        """
-        Test parametrized operations using caller-supplied resource values.
-
-        Only runs tests whose placeholder keys are satisfied by self.known_values.
-        """
-        results: Dict[str, Any] = {}
-
-        for service_name, operations in RESOURCE_TESTS.items():
-            if self.allowed_services is not None and service_name not in self.allowed_services:
-                continue
-
-            client = self._get_client(service_name)
-            if not client:
-                continue
-
-            for op_name, raw_kwargs in operations.items():
-                # Substitute {placeholder} values; skip if any placeholder is missing
-                kwargs: Dict[str, Any] = {}
-                skip = False
-                for k, v in raw_kwargs.items():
-                    if isinstance(v, str) and v.startswith("{") and v.endswith("}"):
-                        key = v[1:-1]
-                        if key not in self.known_values:
-                            skip = True
-                            break
-                        kwargs[k] = self.known_values[key]
-                    else:
-                        kwargs[k] = v
-                if skip:
-                    continue
-
-                try:
-                    action_fn = getattr(client, op_name)
-                    response = action_fn(**kwargs)
-                    result_key = f"{service_name}.{op_name}"
-                    self.logger.info(f"-- [resource] {result_key}() worked!")
-                    results[result_key] = remove_metadata(response)
-                except botocore.exceptions.ClientError as e:
-                    code = e.response.get("Error", {}).get("Code", "")
-                    if code in FATAL_ERROR_CODES:
-                        raise FatalAWSError(code, str(e)) from e
-                except Exception:
-                    pass
-
-        return results
 
     def _enumerate_using_dryrun(self) -> Dict[str, Any]:
         """

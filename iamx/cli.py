@@ -83,15 +83,6 @@ def aws(ctx: click.Context) -> None:
     ]),
     help="Limit enumeration to a service group. Can be specified multiple times.",
 )
-@click.option(
-    "--known-value",
-    "-k",
-    multiple=True,
-    help=(
-        "Resource value for parametrized tests, as key=value. Can be specified multiple times. "
-        "e.g. --known-value bucket=my-bucket --known-value function=my-fn"
-    ),
-)
 @click.pass_context
 def aws_enumerate(
     ctx: click.Context,
@@ -102,7 +93,6 @@ def aws_enumerate(
     output: str,
     output_file: Optional[str],
     group: tuple,
-    known_value: tuple,
 ) -> None:
     """
     Enumerate AWS IAM permissions using brute-force API calls.
@@ -124,9 +114,6 @@ def aws_enumerate(
         # Target only specific service groups (much faster)
         iamx aws enumerate --group serverless --group iam
 
-        # Provide known resource values to unlock parametrized tests
-        iamx aws enumerate --known-value bucket=my-bucket --known-value function=my-fn
-
         # With session token (temporary credentials)
         iamx aws enumerate -a ASIA... -s ... -t ...
 
@@ -142,19 +129,6 @@ def aws_enumerate(
         )
         sys.exit(1)
 
-    # Parse --known-value key=value pairs
-    known_values: dict = {}
-    for kv in known_value:
-        if "=" not in kv:
-            click.echo(
-                click.style("Error: ", fg="red", bold=True)
-                + f"--known-value must be in key=value format, got: {kv}",
-                err=True,
-            )
-            sys.exit(1)
-        k, v = kv.split("=", 1)
-        known_values[k.strip()] = v.strip()
-
     from iamx.aws.enumerator import AWSEnumerator
 
     verbose = ctx.obj.get("verbose", False)
@@ -167,8 +141,6 @@ def aws_enumerate(
 
     if group:
         click.echo(click.style("🎯 ", fg="cyan") + f"Service groups: {', '.join(group)}")
-    if known_values:
-        click.echo(click.style("🔑 ", fg="cyan") + f"Known values: {', '.join(f'{k}={v}' for k, v in known_values.items())}")
     if session_token:
         click.echo(click.style("🔑 ", fg="cyan") + "Using session token (temporary credentials)")
 
@@ -179,7 +151,6 @@ def aws_enumerate(
         region=region,
         verbose=verbose,
         groups=list(group) if group else None,
-        known_values=known_values if known_values else None,
     )
 
     try:
@@ -358,6 +329,11 @@ def azure(ctx: click.Context) -> None:
     help="Resource group to test against (optional)",
 )
 @click.option(
+    "--group",
+    multiple=True,
+    help="Restrict enumeration to a service group (e.g. compute, network, storage). Repeatable.",
+)
+@click.option(
     "--output",
     "-o",
     type=click.Choice(["json", "text"]),
@@ -381,6 +357,7 @@ def azure_enumerate(
     credentials_file: Optional[str],
     token: Optional[str],
     resource_group: Optional[str],
+    group: tuple,
     output: str,
     output_file: Optional[str],
 ) -> None:
@@ -485,6 +462,9 @@ def azure_enumerate(
     else:
         click.echo(click.style("📋 ", fg="cyan") + "Subscription: (will auto-discover)")
 
+    if group:
+        click.echo(click.style("🎯 ", fg="cyan") + f"Service groups: {', '.join(group)}")
+
     if has_sp_creds:
         click.echo(click.style("🔑 ", fg="cyan") + f"Using service principal: {client_id}")
     else:
@@ -497,6 +477,7 @@ def azure_enumerate(
         client_secret=client_secret,
         access_token=token,
         resource_group=resource_group,
+        groups=list(group) if group else None,
         verbose=verbose,
     )
 
