@@ -17,6 +17,8 @@ from botocore.client import Config
 
 from iamx.aws.bruteforce_tests import BRUTEFORCE_TESTS
 from iamx.aws.privesc import check_privesc, extract_permissions
+from iamx.aws.resource_tests import DRYRUN_TESTS, RESOURCE_TESTS
+from iamx.aws.service_groups import SERVICE_GROUPS
 from iamx.utils.helpers import remove_metadata
 
 # Error codes that mean the credentials are fundamentally invalid — no point continuing
@@ -56,6 +58,8 @@ class AWSEnumerator:
         session_token: Optional[str] = None,
         region: str = "us-east-1",
         verbose: bool = False,
+        groups: Optional[List[str]] = None,
+        known_values: Optional[Dict[str, str]] = None,
     ):
         """
         Initialize the AWS Enumerator.
@@ -66,12 +70,23 @@ class AWSEnumerator:
             session_token: AWS Session Token (for temporary credentials)
             region: AWS Region
             verbose: Enable verbose logging
+            groups: Limit brute-force to specific service groups (e.g. ["serverless", "iam"])
+            known_values: Resource values for parametrized tests (e.g. {"bucket": "my-bucket"})
         """
         self.access_key = access_key
         self.secret_key = secret_key
         self.session_token = session_token
         self.region = region
         self.verbose = verbose
+        self.known_values: Dict[str, str] = known_values or {}
+
+        # Resolve service groups into a flat set of service names
+        if groups:
+            self.allowed_services: Optional[set] = set()
+            for g in groups:
+                self.allowed_services.update(SERVICE_GROUPS.get(g, []))
+        else:
+            self.allowed_services = None  # None means all services
 
         self._client_pool: Dict[str, Any] = {}
         self._setup_logging()
@@ -143,6 +158,34 @@ class AWSEnumerator:
         except Exception as e:
             results["errors"].append(f"Bruteforce enumeration error: {str(e)}")
             self.logger.error(f"Bruteforce enumeration failed: {e}")
+
+        # Known-resource parametrized tests
+        if self.known_values:
+            try:
+                resource_results = self._enumerate_using_resources()
+                results["permissions"]["bruteforce"].update(resource_results)
+                self.logger.info(f"Resource enumeration complete. Found {len(resource_results)} additional permissions.")
+            except FatalAWSError as e:
+                results["errors"].append(f"[{e.code}] {e}")
+                self.logger.error(f"Stopping enumeration — invalid credentials: [{e.code}] {e}")
+                return results
+            except Exception as e:
+                results["errors"].append(f"Resource enumeration error: {str(e)}")
+                self.logger.error(f"Resource enumeration failed: {e}")
+
+        # EC2 DryRun permission tests
+        try:
+            dryrun_results = self._enumerate_using_dryrun()
+            results["permissions"]["bruteforce"].update(dryrun_results)
+            if dryrun_results:
+                self.logger.info(f"DryRun tests complete. Found {len(dryrun_results)} EC2 write permission(s).")
+        except FatalAWSError as e:
+            results["errors"].append(f"[{e.code}] {e}")
+            self.logger.error(f"Stopping enumeration — invalid credentials: [{e.code}] {e}")
+            return results
+        except Exception as e:
+            results["errors"].append(f"DryRun enumeration error: {str(e)}")
+            self.logger.error(f"DryRun enumeration failed: {e}")
 
         # Check for privilege escalation paths using discovered permissions
         try:
@@ -451,12 +494,14 @@ class AWSEnumerator:
 
     def _generate_test_cases(self) -> List[Tuple[str, str]]:
         """
-        Generate randomized test cases.
+        Generate randomized test cases, optionally filtered by service group.
 
         Yields:
             Tuples of (service_name, operation_name)
         """
         service_names = list(BRUTEFORCE_TESTS.keys())
+        if self.allowed_services is not None:
+            service_names = [s for s in service_names if s in self.allowed_services]
         random.shuffle(service_names)
 
         for service_name in service_names:
@@ -513,3 +558,87 @@ class AWSEnumerator:
         except Exception as e:
             self.logger.debug(f"Unexpected error for {service_name}.{operation_name}: {e}")
             return None
+
+    def _enumerate_using_resources(self) -> Dict[str, Any]:
+        """
+        Test parametrized operations using caller-supplied resource values.
+
+        Only runs tests whose placeholder keys are satisfied by self.known_values.
+        """
+        results: Dict[str, Any] = {}
+
+        for service_name, operations in RESOURCE_TESTS.items():
+            if self.allowed_services is not None and service_name not in self.allowed_services:
+                continue
+
+            client = self._get_client(service_name)
+            if not client:
+                continue
+
+            for op_name, raw_kwargs in operations.items():
+                # Substitute {placeholder} values; skip if any placeholder is missing
+                kwargs: Dict[str, Any] = {}
+                skip = False
+                for k, v in raw_kwargs.items():
+                    if isinstance(v, str) and v.startswith("{") and v.endswith("}"):
+                        key = v[1:-1]
+                        if key not in self.known_values:
+                            skip = True
+                            break
+                        kwargs[k] = self.known_values[key]
+                    else:
+                        kwargs[k] = v
+                if skip:
+                    continue
+
+                try:
+                    action_fn = getattr(client, op_name)
+                    response = action_fn(**kwargs)
+                    result_key = f"{service_name}.{op_name}"
+                    self.logger.info(f"-- [resource] {result_key}() worked!")
+                    results[result_key] = remove_metadata(response)
+                except botocore.exceptions.ClientError as e:
+                    code = e.response.get("Error", {}).get("Code", "")
+                    if code in FATAL_ERROR_CODES:
+                        raise FatalAWSError(code, str(e)) from e
+                except Exception:
+                    pass
+
+        return results
+
+    def _enumerate_using_dryrun(self) -> Dict[str, Any]:
+        """
+        Test EC2 write operations using DryRun=True.
+
+        DryRunOperation  error → caller HAS the permission (no resource was created).
+        UnauthorizedOperation error → caller does NOT have the permission.
+        """
+        results: Dict[str, Any] = {}
+
+        if self.allowed_services is not None and "ec2" not in self.allowed_services:
+            return results
+
+        client = self._get_client("ec2")
+        if not client:
+            return results
+
+        for op_name, kwargs in DRYRUN_TESTS.items():
+            try:
+                action_fn = getattr(client, op_name)
+                action_fn(**kwargs)
+            except botocore.exceptions.ClientError as e:
+                code = e.response.get("Error", {}).get("Code", "")
+                if code in FATAL_ERROR_CODES:
+                    raise FatalAWSError(code, str(e)) from e
+                if code == "UnauthorizedOperation":
+                    continue
+                # Any other ClientError means AWS processed the request past auth:
+                # DryRunOperation = explicit DryRun success; anything else (e.g.
+                # InvalidInstanceID.NotFound) means the fake resource ID didn't
+                # exist but permission was already confirmed.
+                self.logger.info(f"-- [dryrun] ec2.{op_name}() — permission confirmed")
+                results[f"ec2.{op_name}"] = {"dryrun": True, "permitted": True}
+            except Exception:
+                pass
+
+        return results
