@@ -27,6 +27,7 @@ class GCPEnumerator:
         project_id: str,
         credentials_file: Optional[str] = None,
         access_token: Optional[str] = None,
+        groups: Optional[List[str]] = None,
         verbose: bool = False,
     ):
         """
@@ -36,12 +37,22 @@ class GCPEnumerator:
             project_id: GCP Project ID
             credentials_file: Path to service account JSON key file
             access_token: Access token for authentication
+            groups: Limit enumeration to specific service groups
             verbose: Enable verbose logging
         """
         self.project_id = project_id
         self.credentials_file = credentials_file
         self.access_token = access_token
         self.verbose = verbose
+
+        # Build allowed permission prefixes from selected groups
+        if groups:
+            from iamx.gcp.service_groups import GCP_SERVICE_GROUPS
+            self.allowed_prefixes: Optional[set] = set()
+            for g in groups:
+                self.allowed_prefixes.update(GCP_SERVICE_GROUPS.get(g, []))
+        else:
+            self.allowed_prefixes = None
 
         self._setup_logging()
         self._credentials = None
@@ -185,8 +196,14 @@ class GCPEnumerator:
                 credentials=credentials,
             )
 
-            # Test permissions in chunks
-            all_permissions = GCP_PERMISSIONS
+            # Filter permissions by service group if specified
+            if self.allowed_prefixes:
+                all_permissions = [
+                    p for p in GCP_PERMISSIONS
+                    if p.split(".")[0] in self.allowed_prefixes
+                ]
+            else:
+                all_permissions = GCP_PERMISSIONS
             total_permissions = len(all_permissions)
             discovered_permissions: List[str] = []
 
