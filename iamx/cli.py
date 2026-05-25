@@ -73,6 +73,25 @@ def aws(ctx: click.Context) -> None:
     default=None,
     help="Write output to file instead of stdout",
 )
+@click.option(
+    "--group",
+    "-g",
+    multiple=True,
+    type=click.Choice([
+        "serverless", "compute", "iam", "storage", "databases",
+        "network", "devops", "security", "monitoring", "ai",
+    ]),
+    help="Limit enumeration to a service group. Can be specified multiple times.",
+)
+@click.option(
+    "--known-value",
+    "-k",
+    multiple=True,
+    help=(
+        "Resource value for parametrized tests, as key=value. Can be specified multiple times. "
+        "e.g. --known-value bucket=my-bucket --known-value function=my-fn"
+    ),
+)
 @click.pass_context
 def aws_enumerate(
     ctx: click.Context,
@@ -82,6 +101,8 @@ def aws_enumerate(
     region: str,
     output: str,
     output_file: Optional[str],
+    group: tuple,
+    known_value: tuple,
 ) -> None:
     """
     Enumerate AWS IAM permissions using brute-force API calls.
@@ -100,6 +121,12 @@ def aws_enumerate(
         export AWS_SECRET_ACCESS_KEY=...
         iamx aws enumerate
 
+        # Target only specific service groups (much faster)
+        iamx aws enumerate --group serverless --group iam
+
+        # Provide known resource values to unlock parametrized tests
+        iamx aws enumerate --known-value bucket=my-bucket --known-value function=my-fn
+
         # With session token (temporary credentials)
         iamx aws enumerate -a ASIA... -s ... -t ...
 
@@ -115,6 +142,19 @@ def aws_enumerate(
         )
         sys.exit(1)
 
+    # Parse --known-value key=value pairs
+    known_values: dict = {}
+    for kv in known_value:
+        if "=" not in kv:
+            click.echo(
+                click.style("Error: ", fg="red", bold=True)
+                + f"--known-value must be in key=value format, got: {kv}",
+                err=True,
+            )
+            sys.exit(1)
+        k, v = kv.split("=", 1)
+        known_values[k.strip()] = v.strip()
+
     from iamx.aws.enumerator import AWSEnumerator
 
     verbose = ctx.obj.get("verbose", False)
@@ -125,6 +165,10 @@ def aws_enumerate(
     )
     click.echo(click.style("🌍 ", fg="cyan") + f"Region: {region}")
 
+    if group:
+        click.echo(click.style("🎯 ", fg="cyan") + f"Service groups: {', '.join(group)}")
+    if known_values:
+        click.echo(click.style("🔑 ", fg="cyan") + f"Known values: {', '.join(f'{k}={v}' for k, v in known_values.items())}")
     if session_token:
         click.echo(click.style("🔑 ", fg="cyan") + "Using session token (temporary credentials)")
 
@@ -134,6 +178,8 @@ def aws_enumerate(
         session_token=session_token,
         region=region,
         verbose=verbose,
+        groups=list(group) if group else None,
+        known_values=known_values if known_values else None,
     )
 
     try:
@@ -818,6 +864,20 @@ def _output_results(results: dict, output_format: str, output_file: Optional[str
         click.echo("\n" + output_str)
 
 
+_ADMIN_POLICY_PATTERNS = (
+    "AdministratorAccess",
+    "Admin",
+    "FullAccess",
+    "PowerUser",
+    "PowerUserAccess",
+    "root",
+)
+
+def _is_admin_policy(name: str, arn: str) -> bool:
+    lower = name.lower()
+    return any(p.lower() in lower for p in _ADMIN_POLICY_PATTERNS)
+
+
 def _format_text_output(results: dict) -> str:
     """Format results as human-readable text."""
     lines = []
@@ -842,6 +902,31 @@ def _format_text_output(results: dict) -> str:
                 lines.append(f"   {key}: {click.style('TRUE - FULL ACCESS', fg='red', bold=True)}")
             elif value:  # Only show non-empty values
                 lines.append(f"   {key}: {value}")
+
+        # Show attached policies and groups from IAM enumeration
+        iam_perms = results.get("permissions", {}).get("iam", {})
+
+        attached_policies = (
+            iam_perms.get("list_attached_user_policies", {}).get("AttachedPolicies")
+            or iam_perms.get("list_attached_role_policies", {}).get("AttachedPolicies")
+            or []
+        )
+        if attached_policies:
+            lines.append(f"   attached_policies:")
+            for p in attached_policies:
+                name = p.get("PolicyName", "")
+                arn = p.get("PolicyArn", "")
+                if _is_admin_policy(name, arn):
+                    label = click.style(f"⚡ {name}", fg="red", bold=True) + click.style(" [ADMIN]", fg="red")
+                else:
+                    label = name
+                lines.append(f"      • {label}")
+
+        groups = iam_perms.get("list_groups_for_user", {}).get("Groups", [])
+        if groups:
+            lines.append(f"   groups:")
+            for g in groups:
+                lines.append(f"      • {g.get('GroupName', '')}")
 
     # Special handling for root account
     if is_root:
@@ -993,7 +1078,7 @@ def _format_text_output(results: dict) -> str:
         elif isinstance(results["permissions"], dict):
             # AWS style
             for service, actions in results["permissions"].items():
-                if service.startswith("_"):
+                if service.startswith("_") or service == "iam":
                     continue
                 if isinstance(actions, list):
                     for a in actions:
