@@ -48,6 +48,7 @@ class AzureEnumerator:
         client_secret: Optional[str] = None,
         access_token: Optional[str] = None,
         resource_group: Optional[str] = None,
+        groups: Optional[List[str]] = None,
         verbose: bool = False,
     ):
         """
@@ -60,6 +61,7 @@ class AzureEnumerator:
             client_secret: Azure AD Client Secret
             access_token: Pre-obtained access token
             resource_group: Optional resource group to test against
+            groups: Optional list of service group names to restrict enumeration
             verbose: Enable verbose logging
         """
         if not AZURE_AVAILABLE:
@@ -74,6 +76,15 @@ class AzureEnumerator:
         self.access_token = access_token
         self.resource_group = resource_group
         self.verbose = verbose
+
+        # Build set of allowed provider prefixes from selected groups
+        if groups:
+            from iamx.azure.service_groups import AZURE_SERVICE_GROUPS
+            self.allowed_prefixes: Optional[List[str]] = []
+            for g in groups:
+                self.allowed_prefixes.extend(AZURE_SERVICE_GROUPS.get(g, []))
+        else:
+            self.allowed_prefixes = None
 
         self._credential = None
         self._token = None
@@ -322,7 +333,8 @@ class AzureEnumerator:
         test_cases = list(self._generate_test_cases(AZURE_OPERATIONS))
         total_tests = len(test_cases)
 
-        self.logger.info(f"Running {total_tests} API tests across {len(AZURE_OPERATIONS)} providers")
+        provider_count = len({p for p, _ in test_cases})
+        self.logger.info(f"Running {total_tests} API tests across {provider_count} providers")
 
         # Run tests in parallel
         with ThreadPoolExecutor(max_workers=self.MAX_THREADS) as executor:
@@ -353,10 +365,7 @@ class AzureEnumerator:
         self, operations: Dict[str, List[Dict[str, Any]]]
     ) -> List[Tuple[str, Dict[str, Any]]]:
         """
-        Generate randomized test cases.
-
-        Args:
-            operations: Dictionary of operations by provider
+        Generate randomized test cases, filtered by group.
 
         Yields:
             Tuples of (provider_name, operation)
@@ -365,11 +374,15 @@ class AzureEnumerator:
         random.shuffle(providers)
 
         for provider in providers:
+            # Filter by allowed provider prefixes if groups were specified
+            if self.allowed_prefixes is not None:
+                if not any(provider.startswith(prefix) for prefix in self.allowed_prefixes):
+                    continue
+
             ops = list(operations[provider])
             random.shuffle(ops)
 
             for op in ops:
-                # Skip operations that require additional parameters
                 if op.get("requires_params", False):
                     continue
                 yield provider, op
@@ -401,7 +414,6 @@ class AzureEnumerator:
             if self.resource_group:
                 path = path.replace("{resourceGroupName}", self.resource_group)
             elif "{resourceGroupName}" in path:
-                # Skip resource group operations if no resource group specified
                 return None
 
             # Use the latest API version

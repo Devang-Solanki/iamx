@@ -1,101 +1,11 @@
 """
-Parametrized AWS resource tests and EC2 DryRun permission checks.
+EC2 DryRun permission checks.
 
-RESOURCE_TESTS: operations that require a specific resource ID.
-  Each entry maps a boto3 method name to its required kwargs,
-  where values starting with "{" are substituted from --known-value flags.
-  The substitution key is the part between the braces.
-
-DRYRUN_TESTS: EC2 write operations tested with DryRun=True.
-  AWS returns DryRunOperation  → caller HAS the permission.
-  AWS returns UnauthorizedOperation → caller does NOT have the permission.
+AWS returns DryRunOperation  → caller HAS the permission.
+AWS returns UnauthorizedOperation → caller does NOT have the permission.
 """
 
 from typing import Any
-
-# Maps --known-value key name → human label shown in help text
-KNOWN_VALUE_KEYS: dict[str, str] = {
-    "bucket":     "S3 bucket name",
-    "key":        "S3 object key",
-    "function":   "Lambda function name",
-    "table":      "DynamoDB table name",
-    "queue":      "SQS queue URL",
-    "secret":     "Secrets Manager secret name or ARN",
-    "parameter":  "SSM parameter name or path",
-    "role":       "IAM role name",
-    "user":       "IAM user name",
-    "group":      "IAM group name",
-    "instance":   "EC2 instance ID",
-    "repository": "ECR repository name",
-    "stack":      "CloudFormation stack name",
-    "kms_key":    "KMS key ID or ARN",
-    "cluster":    "ECS/EKS cluster name",
-    "domain":     "OpenSearch domain name",
-}
-
-# service → { method_name → { kwarg: value_or_{placeholder} } }
-RESOURCE_TESTS: dict[str, dict[str, dict[str, Any]]] = {
-    "s3": {
-        "get_bucket_acl":            {"Bucket": "{bucket}"},
-        "get_bucket_policy":         {"Bucket": "{bucket}"},
-        "get_bucket_versioning":     {"Bucket": "{bucket}"},
-        "get_bucket_encryption":     {"Bucket": "{bucket}"},
-        "get_bucket_logging":        {"Bucket": "{bucket}"},
-        "get_bucket_cors":           {"Bucket": "{bucket}"},
-        "list_objects_v2":           {"Bucket": "{bucket}"},
-        "get_object":                {"Bucket": "{bucket}", "Key": "{key}"},
-        "get_object_acl":            {"Bucket": "{bucket}", "Key": "{key}"},
-    },
-    "lambda": {
-        "get_function":                         {"FunctionName": "{function}"},
-        "get_function_configuration":           {"FunctionName": "{function}"},
-        "get_function_url_config":              {"FunctionName": "{function}"},
-        "list_function_event_invoke_configs":   {"FunctionName": "{function}"},
-        "get_policy":                           {"FunctionName": "{function}"},
-    },
-    "dynamodb": {
-        "describe_table":  {"TableName": "{table}"},
-        "scan":            {"TableName": "{table}"},
-    },
-    "sqs": {
-        "get_queue_attributes": {"QueueUrl": "{queue}", "AttributeNames": ["All"]},
-    },
-    "secretsmanager": {
-        "get_secret_value": {"SecretId": "{secret}"},
-        "describe_secret":  {"SecretId": "{secret}"},
-    },
-    "ssm": {
-        "get_parameter":          {"Name": "{parameter}"},
-        "get_parameters_by_path": {"Path": "{parameter}"},
-    },
-    "iam": {
-        "get_role":              {"RoleName": "{role}"},
-        "list_role_policies":   {"RoleName": "{role}"},
-        "get_user":              {"UserName": "{user}"},
-        "list_user_policies":   {"UserName": "{user}"},
-        "get_group":             {"GroupName": "{group}"},
-        "list_group_policies":  {"GroupName": "{group}"},
-    },
-    "ecr": {
-        "describe_images": {"repositoryName": "{repository}"},
-        "list_images":     {"repositoryName": "{repository}"},
-        "get_repository_policy": {"repositoryName": "{repository}"},
-    },
-    "cloudformation": {
-        "get_template":            {"StackName": "{stack}"},
-        "describe_stack_resources": {"StackName": "{stack}"},
-    },
-    "kms": {
-        "describe_key":    {"KeyId": "{kms_key}"},
-        "get_key_policy":  {"KeyId": "{kms_key}", "PolicyName": "default"},
-        "list_grants":     {"KeyId": "{kms_key}"},
-    },
-    "ecs": {
-        "describe_clusters": {"clusters": ["{cluster}"]},
-        "list_tasks":        {"cluster": "{cluster}"},
-        "list_services":     {"cluster": "{cluster}"},
-    },
-}
 
 
 # EC2 operations that support DryRun=True.
