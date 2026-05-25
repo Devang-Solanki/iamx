@@ -9,12 +9,16 @@ A powerful CLI tool for enumerating IAM permissions across AWS, GCP, and Azure c
 
 - 🔍 **AWS IAM Enumeration**: Test AWS credentials against 400+ services and thousands of API operations
 - 🔍 **GCP IAM Enumeration**: Test GCP credentials against 4000+ IAM permissions
-- 🧪 **Azure RBAC Enumeration** *(Experimental)*: Test Azure credentials against 2000+ API operations
+- 🧪 **Azure RBAC Enumeration**: Test Azure credentials against 2000+ API operations
 - 🚨 **Privilege Escalation Detection**: Automatically checks discovered AWS permissions against 66+ known escalation paths (powered by [pathfinding.cloud](https://pathfinding.cloud))
+- 🎯 **Service Groups**: Target specific service areas (`--group compute`, `--group security`, etc.) for faster, focused enumeration on both AWS and Azure
+- ⚡ **EC2 Write Permission Testing**: Uses AWS DryRun to confirm 43 EC2 write permissions without creating any resources
+- 🏷️ **Identity Enrichment**: Shows attached policy names, group memberships, and highlights admin-level policies
+- 🛑 **Fast Credential Validation**: Stops enumeration immediately on expired or invalid credentials across all clouds
 - 🚀 **Multi-threaded**: Fast parallel execution for API testing
 - 📊 **Multiple Output Formats**: JSON or human-readable text output
 - 🔧 **Auto-Update**: Sync bruteforce test definitions from [IAM Dataset](https://github.com/iann0036/iam-dataset) and privilege escalation paths from [pathfinding.cloud](https://pathfinding.cloud)
-- 🛡️ **Safe**: Only uses read-only operations (list, describe, get)
+- 🛡️ **Safe**: Read-only operations for enumeration; EC2 write permissions tested via DryRun only
 
 ## Installation
 
@@ -56,12 +60,15 @@ iamx aws enumerate --access-key AKIA... --secret-key ...
 # With session token (temporary credentials)
 iamx aws enumerate -a ASIA... -s ... -t ...
 
+# Target only specific service groups (much faster)
+iamx aws enumerate --access-key AKIA... --secret-key ... --group compute
+iamx aws enumerate --access-key AKIA... --secret-key ... --group serverless --group iam
+
 # Output to JSON file
 iamx aws enumerate -o json -f results.json
-
-# Verbose mode
-iamx -v aws enumerate
 ```
+
+**Available AWS service groups:** `serverless`, `compute`, `iam`, `storage`, `databases`, `network`, `devops`, `security`, `monitoring`, `ai`
 
 ### GCP Enumeration
 
@@ -73,11 +80,17 @@ iamx gcp enumerate -c service-account.json
 # Using access token
 iamx gcp enumerate -p my-project -t ya29...
 
+# Target only specific service groups (much faster)
+iamx gcp enumerate -p my-project -c key.json --group storage
+iamx gcp enumerate -p my-project -c key.json --group iam --group security
+
 # Output to JSON file
 iamx gcp enumerate -p my-project -c key.json -o json -f results.json
 ```
 
-### Azure Enumeration *(Experimental)*
+**Available GCP service groups:** `compute`, `network`, `storage`, `databases`, `serverless`, `iam`, `security`, `monitoring`, `ai`, `devops`, `data`
+
+### Azure Enumeration
 
 ```bash
 # Using credentials JSON file
@@ -92,12 +105,18 @@ export AZURE_CLIENT_ID=...
 export AZURE_CLIENT_SECRET=...
 iamx azure enumerate
 
-# With specific subscription
-iamx azure enumerate -s <subscription-id>
+# Target only specific service groups
+iamx azure enumerate -t <tenant-id> -c <client-id> --client-secret <secret> --group compute
+iamx azure enumerate -t <tenant-id> -c <client-id> --client-secret <secret> --group security --group iam
+
+# With specific subscription and resource group
+iamx azure enumerate -s <subscription-id> -g <resource-group>
 
 # Output to JSON file
 iamx azure enumerate -o json -f results.json
 ```
+
+**Available Azure service groups:** `compute`, `network`, `storage`, `databases`, `iam`, `security`, `monitoring`, `serverless`, `ai`, `devops`
 
 **Credentials JSON file format:**
 ```json
@@ -124,7 +143,7 @@ Options:
 Commands:
   aws       AWS IAM permission enumeration commands
   gcp       GCP IAM permission enumeration commands
-  azure     Azure RBAC permission enumeration commands (experimental)
+  azure     Azure RBAC permission enumeration commands
   generate  Generate bruteforce test definitions
 ```
 
@@ -140,6 +159,9 @@ Options:
   -s, --secret-key TEXT      AWS Secret Access Key (or set AWS_SECRET_ACCESS_KEY env var)
   -t, --session-token TEXT   AWS Session Token for temporary credentials
   -r, --region TEXT          AWS Region (default: us-east-1)
+  -g, --group TEXT           Limit enumeration to a service group. Can be specified multiple times.
+                             Choices: serverless, compute, iam, storage, databases, network,
+                             devops, security, monitoring, ai
   -o, --output [json|text]   Output format (default: text)
   -f, --output-file PATH     Write output to file instead of stdout
   --help                     Show this message and exit.
@@ -156,12 +178,15 @@ Options:
   -p, --project TEXT         GCP Project ID (required, or set GOOGLE_CLOUD_PROJECT env var)
   -c, --credentials PATH     Path to service account JSON key file
   -t, --token TEXT           Access token for authentication
+  -g, --group TEXT           Limit enumeration to a service group. Can be specified multiple times.
+                             Choices: compute, network, storage, databases, serverless, iam,
+                             security, monitoring, ai, devops, data
   -o, --output [json|text]   Output format (default: text)
   -f, --output-file PATH     Write output to file instead of stdout
   --help                     Show this message and exit.
 ```
 
-### Azure Commands *(Experimental)*
+### Azure Commands
 
 #### Enumerate Permissions
 
@@ -176,6 +201,9 @@ Options:
   --credentials-file PATH    Path to JSON file with Azure credentials
   --token TEXT               Pre-obtained access token for authentication
   -g, --resource-group TEXT  Resource group to test against (optional)
+  --group TEXT               Limit enumeration to a service group. Can be specified multiple times.
+                             Choices: compute, network, storage, databases, iam, security,
+                             monitoring, serverless, ai, devops
   -o, --output [json|text]   Output format (default: text)
   -f, --output-file PATH     Write output to file instead of stdout
   --help                     Show this message and exit.
@@ -234,28 +262,35 @@ Options:
 ============================================================
 
 📋 Identity Information:
-   arn: arn:aws:iam::123456789012:user/deploy-user
-   user_name: deploy-user
+   arn: arn:aws:iam::123456789012:user/AdminDev
+   user_name: AdminDev
+   attached_policies:
+      • ⚡ AdministratorAccess [ADMIN]
+   groups:
+      • Developers
 
 🔓 Discovered Permissions:
 
-   bruteforce:
-      ✓ sts.get_caller_identity
-      ✓ sts.get_session_token
-      ✓ ec2.describe_instances
-      ✓ lambda.list_functions
+   ⚠️  High Value: get_account_authorization_details succeeded — full account IAM policies are readable
 
-   iam:
-      ✓ get_user
-      ✓ list_attached_user_policies
+   bruteforce:
+      ✓ ec2.describe_instances
+      ✓ ec2.describe_vpcs
+      ✓ ec2.run_instances
+      ✓ ec2.terminate_instances
+      ✓ ec2.create_security_group
+      ✓ lambda.list_functions
+      ✓ s3.list_buckets
+      ...
 
 🚨 Privilege Escalation Paths Detected:
-   iam:PassRole + lambda:CreateFunction + lambda:InvokeFunction  [PassRole → New Resource]
-   ID: lambda-001
-   Required: iam:PassRole, lambda:CreateFunction, lambda:InvokeFunction
+
+   ec2:ModifyInstanceAttribute + ec2:StopInstances + ec2:StartInstances  [PassRole → Existing Resource]
+   ID: ec2-002
+   Required: ec2:ModifyInstanceAttribute, ec2:StopInstances, ec2:StartInstances
 
 ============================================================
-  Total permissions discovered: 6
+  Total permissions discovered: 260
 ============================================================
 ```
 
@@ -274,7 +309,8 @@ Options:
     },
     "bruteforce": {
       "ec2.describe_instances": {},
-      "s3.list_buckets": {}
+      "s3.list_buckets": {},
+      "ec2.run_instances": {"dryrun": true, "permitted": true}
     }
   },
   "privilege_escalation": {
@@ -297,24 +333,27 @@ Options:
 
 ### AWS Enumeration
 
-1. **IAM API Enumeration**: First attempts to gather identity information using IAM API calls:
-   - `get_user` / `get_role` - Get current identity
-   - `get_account_authorization_details` - Get all IAM policies (if permitted)
-   - `list_attached_user_policies` / `list_attached_role_policies`
-   - `list_user_policies` / `list_role_policies`
-   - `list_groups_for_user`
+1. **Identity & IAM Discovery**: Gathers identity information and attached policies:
+   - `get_user` / `get_role` — resolve current principal
+   - `get_account_authorization_details` — full account IAM policies (high-value if permitted)
+   - `list_attached_user_policies` / `list_attached_role_policies` — attached managed policies
+   - `list_groups_for_user` — group memberships
+   - Attached policy names and admin-level policies are highlighted in the output
 
-2. **Bruteforce Enumeration**: Tests hundreds of read-only API operations across AWS services:
+2. **Bruteforce Enumeration**: Tests hundreds of read-only API operations in parallel:
    - Only uses `list_*`, `describe_*`, and `get_*` operations
-   - Operations that require parameters are excluded
-   - Multi-threaded execution (25 threads by default)
-   - Randomized order to avoid detection patterns
+   - Use `--group` to target a specific service area and reduce test count significantly
+   - 25 threads by default, randomized order
 
-3. **Privilege Escalation Detection**: After enumeration, checks the discovered permissions against 66+ known escalation paths:
-   - Parses permissions from both brute-force results and any retrieved IAM policy documents
+3. **EC2 Write Permission Testing**: Uses AWS `DryRun=True` to confirm 43 EC2 write permissions without creating any resources:
+   - AWS checks authorization before resource validation — any response other than `UnauthorizedOperation` means the permission is confirmed
+   - Covers instance lifecycle, volumes/snapshots, networking, security groups, key pairs, launch templates, and more
+
+4. **Privilege Escalation Detection**: Checks all discovered permissions against 66+ known escalation paths:
+   - Scoped strictly to the current principal's policies (no false positives from other users)
    - Handles wildcards (`*`, `iam:*`) correctly
-   - Powered by [pathfinding.cloud](https://pathfinding.cloud) — paths are kept up to date via `iamx generate aws`
-   - Covers four escalation categories: PassRole (new resource), PassRole (existing resource), self-escalation, and direct principal access
+   - Powered by [pathfinding.cloud](https://pathfinding.cloud)
+   - Four categories: PassRole (new resource), PassRole (existing resource), self-escalation, direct principal access
 
 ### GCP Enumeration
 
@@ -322,29 +361,30 @@ Options:
 2. Tests 4000+ GCP IAM permissions in batches of 100
 3. Returns all permissions the credentials have on the specified project
 
-### Azure Enumeration *(Experimental)*
+> **Note**: Requires the Cloud Resource Manager API to be enabled on the project.
 
-1. **Role Assignment Discovery**: Retrieves role assignments for the authenticated identity
-2. **API Operation Testing**: Tests 2000+ Azure REST API operations (GET requests only)
-   - Only uses read-only operations (GET methods)
-   - Operations are grouped by resource provider
-   - Multi-threaded execution (10 threads by default)
-   - Randomized order to avoid detection patterns
+### Azure Enumeration
 
-> ⚠️ **Note**: Azure support is experimental. The author has limited Azure experience and welcomes community contributions to improve this feature. See [Contributing](#contributing) section below.
+1. **Role Assignment Discovery**: Retrieves RBAC role assignments for the authenticated identity
+2. **API Operation Testing**: Tests 2000+ Azure REST API operations:
+   - Only uses read-only GET operations
+   - Use `--group` to restrict to a specific service area (e.g. `--group compute` tests ~66 ops instead of 2000+)
+   - Operations requiring a resource group are skipped unless `--resource-group` is provided
+   - 10 threads by default, randomized order
 
 ## Security Considerations
 
-- **Read-Only Operations**: This tool only uses read-only API operations and will not modify any resources
-- **Rate Limiting**: AWS may rate-limit requests; the tool includes retry logic
-- **Detection**: Cloud providers may log and alert on enumeration activity
+- **Read-Only Operations**: Enumeration uses only read-only API calls and will not modify any resources
+- **DryRun for Writes**: EC2 write permissions are tested via `DryRun=True` — AWS confirms or denies the permission without executing the operation
+- **Credential Safety**: Enumeration stops immediately on invalid or expired credentials (401/403 fatal errors)
+- **Detection**: Cloud providers log API activity; enumeration may appear in CloudTrail, GCP Audit Logs, or Azure Monitor
 - **Credentials**: Never commit credentials to version control
 
 ## Updating Test Definitions
 
 The tool can automatically download and generate test definitions from the [IAM Dataset](https://github.com/iann0036/iam-dataset) repository.
 
-### Update AWS Tests (Recommended)
+### Update AWS Tests
 
 ```bash
 # Generate from IAM dataset and sync privilege escalation paths
@@ -369,11 +409,6 @@ iamx generate gcp
 
 # Generate only safe (read-only) permissions
 iamx generate gcp --safe-only
-
-# This will:
-# - Download the latest GCP IAM mappings from GitHub
-# - Extract all permissions from API methods
-# - Generate iamx/gcp/permissions.py
 ```
 
 ### Update Azure Operations
@@ -381,11 +416,6 @@ iamx generate gcp --safe-only
 ```bash
 # Generate from IAM dataset (downloads automatically)
 iamx generate azure
-
-# This will:
-# - Download the latest Azure API specs from GitHub
-# - Extract all GET operations (read-only)
-# - Generate iamx/azure/operations.py
 ```
 
 ### Legacy: Generate from AWS SDK
@@ -421,6 +451,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Original AWS enumeration concept from [andresriancho's enumerate-iam](https://github.com/andresriancho/enumerate-iam)
 - [IAM Dataset](https://github.com/iann0036/iam-dataset) by Ian Mckay for comprehensive AWS and GCP IAM mappings
 - [pathfinding.cloud](https://pathfinding.cloud) for the AWS privilege escalation path database
+- Inspired by [cliam](https://github.com/securisec/cliam) for service group and DryRun enumeration concepts
 
 ## Disclaimer
 

@@ -194,6 +194,12 @@ def gcp(ctx: click.Context) -> None:
     help="Access token for authentication",
 )
 @click.option(
+    "--group",
+    "-g",
+    multiple=True,
+    help="Restrict enumeration to a service group (e.g. compute, storage, iam). Repeatable.",
+)
+@click.option(
     "--output",
     "-o",
     type=click.Choice(["json", "text"]),
@@ -213,6 +219,7 @@ def gcp_enumerate(
     project: str,
     credentials: Optional[str],
     token: Optional[str],
+    group: tuple,
     output: str,
     output_file: Optional[str],
 ) -> None:
@@ -234,6 +241,10 @@ def gcp_enumerate(
         export GOOGLE_CLOUD_PROJECT=my-project
         export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
         iamx gcp enumerate
+
+        # Target only specific service groups (much faster)
+        iamx gcp enumerate -p my-project -c key.json --group storage
+        iamx gcp enumerate -p my-project -c key.json --group iam --group security
 
         # Output to JSON file
         iamx gcp enumerate -p my-project -c key.json -o json -f results.json
@@ -257,10 +268,14 @@ def gcp_enumerate(
     else:
         click.echo(click.style("🔑 ", fg="cyan") + f"Using access token: {token[:8]}...{token[-4:]}")
 
+    if group:
+        click.echo(click.style("🎯 ", fg="cyan") + f"Service groups: {', '.join(group)}")
+
     enumerator = GCPEnumerator(
         project_id=project,
         credentials_file=credentials,
         access_token=token,
+        groups=list(group) if group else None,
         verbose=verbose,
     )
 
