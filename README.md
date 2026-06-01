@@ -3,6 +3,8 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-%20%20GNU%20GPLv3%20-green)](https://opensource.org/licenses/MIT)
 
+Disclaimer: No AI was harmed during development.
+
 A powerful CLI tool for enumerating IAM permissions across AWS, GCP, and Azure cloud platforms. Discover what permissions a given set of credentials actually has — and for AWS, whether those permissions can be abused to escalate access.
 
 ## Features
