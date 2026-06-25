@@ -899,8 +899,9 @@ def _format_text_output(results: dict) -> str:
             elif value:  # Only show non-empty values
                 lines.append(f"   {key}: {value}")
 
-        # Show attached policies and groups from IAM enumeration
-        iam_perms = results.get("permissions", {}).get("iam", {})
+        # Show attached policies and groups from IAM enumeration (AWS only)
+        perms = results.get("permissions", {})
+        iam_perms = perms.get("iam", {}) if isinstance(perms, dict) else {}
 
         attached_policies = (
             iam_perms.get("list_attached_user_policies", {}).get("AttachedPolicies")
