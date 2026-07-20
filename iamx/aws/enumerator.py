@@ -567,14 +567,9 @@ class AWSEnumerator:
                 code = e.response.get("Error", {}).get("Code", "")
                 if code in FATAL_ERROR_CODES:
                     raise FatalAWSError(code, str(e)) from e
-                if code == "UnauthorizedOperation":
-                    continue
-                # Any other ClientError means AWS processed the request past auth:
-                # DryRunOperation = explicit DryRun success; anything else (e.g.
-                # InvalidInstanceID.NotFound) means the fake resource ID didn't
-                # exist but permission was already confirmed.
-                self.logger.info(f"-- [dryrun] ec2.{op_name}() — permission confirmed")
-                results[f"ec2.{op_name}"] = {"dryrun": True, "permitted": True}
+                if code == "DryRunOperation":
+                    self.logger.info(f"-- [dryrun] ec2.{op_name}() — permission confirmed")
+                    results[f"ec2.{op_name}"] = {"dryrun": True, "permitted": True}
             except Exception:
                 pass
 
