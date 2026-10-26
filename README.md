@@ -1,7 +1,7 @@
 # IAMX
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-%20%20GNU%20GPLv3%20-green)](https://opensource.org/licenses/MIT)
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 Disclaimer: No AI was harmed during development.
 
@@ -9,12 +9,12 @@ A powerful CLI tool for enumerating IAM permissions across AWS, GCP, and Azure c
 
 ## Features
 
-- 🔍 **AWS IAM Enumeration**: Test AWS credentials against 400+ services and thousands of API operations
-- 🔍 **GCP IAM Enumeration**: Test GCP credentials against 4000+ IAM permissions
-- 🧪 **Azure RBAC Enumeration**: Test Azure credentials against 2000+ API operations
-- 🚨 **Privilege Escalation Detection**: Automatically checks discovered AWS permissions against 66+ known escalation paths (powered by [pathfinding.cloud](https://pathfinding.cloud))
+- 🔍 **AWS IAM Enumeration**: Test AWS credentials against 7,590 API operations across 427 services
+- 🔍 **GCP IAM Enumeration**: Test GCP credentials against 4,293 IAM permissions
+- 🧪 **Azure RBAC Enumeration**: Test Azure credentials against 2,324 API operations across 291 resource providers
+- 🚨 **Privilege Escalation Detection**: Automatically checks discovered AWS permissions against 66 known escalation paths (powered by [pathfinding.cloud](https://pathfinding.cloud))
 - 🎯 **Service Groups**: Target specific service areas (`--group compute`, `--group security`, etc.) for faster, focused enumeration on both AWS and Azure
-- ⚡ **EC2 Write Permission Testing**: Uses AWS DryRun to confirm 43 EC2 write permissions without creating any resources
+- ⚡ **EC2 Write Permission Testing**: Uses AWS DryRun to confirm 46 EC2 write permissions without creating any resources
 - 🏷️ **Identity Enrichment**: Shows attached policy names, group memberships, and highlights admin-level policies
 - 🛑 **Fast Credential Validation**: Stops enumeration immediately on expired or invalid credentials across all clouds
 - 🚀 **Multi-threaded**: Fast parallel execution for API testing
@@ -342,16 +342,16 @@ Options:
    - `list_groups_for_user` — group memberships
    - Attached policy names and admin-level policies are highlighted in the output
 
-2. **Bruteforce Enumeration**: Tests hundreds of read-only API operations in parallel:
+2. **Bruteforce Enumeration**: Tests 7,590 read-only API operations across 427 services in parallel:
    - Only uses `list_*`, `describe_*`, and `get_*` operations
    - Use `--group` to target a specific service area and reduce test count significantly
    - 25 threads by default, randomized order
 
-3. **EC2 Write Permission Testing**: Uses AWS `DryRun=True` to confirm 43 EC2 write permissions without creating any resources:
+3. **EC2 Write Permission Testing**: Uses AWS `DryRun=True` to confirm 46 EC2 write permissions without creating any resources:
    - AWS checks authorization before resource validation — any response other than `UnauthorizedOperation` means the permission is confirmed
    - Covers instance lifecycle, volumes/snapshots, networking, security groups, key pairs, launch templates, and more
 
-4. **Privilege Escalation Detection**: Checks all discovered permissions against 66+ known escalation paths:
+4. **Privilege Escalation Detection**: Checks all discovered permissions against 66 known escalation paths:
    - Scoped strictly to the current principal's policies (no false positives from other users)
    - Handles wildcards (`*`, `iam:*`) correctly
    - Powered by [pathfinding.cloud](https://pathfinding.cloud)
@@ -360,7 +360,7 @@ Options:
 ### GCP Enumeration
 
 1. Uses the Cloud Resource Manager API's `testIamPermissions` method
-2. Tests 4000+ GCP IAM permissions in batches of 100
+2. Tests 4,293 GCP IAM permissions in batches of 100
 3. Returns all permissions the credentials have on the specified project
 
 > **Note**: Requires the Cloud Resource Manager API to be enabled on the project.
@@ -368,9 +368,9 @@ Options:
 ### Azure Enumeration
 
 1. **Role Assignment Discovery**: Retrieves RBAC role assignments for the authenticated identity
-2. **API Operation Testing**: Tests 2000+ Azure REST API operations:
+2. **API Operation Testing**: Tests 2,324 Azure REST API operations across 291 resource providers:
    - Only uses read-only GET operations
-   - Use `--group` to restrict to a specific service area (e.g. `--group compute` tests ~66 ops instead of 2000+)
+   - Use `--group` to restrict to a specific service area (e.g. `--group compute` tests ~66 ops instead of the full dataset)
    - Operations requiring a resource group are skipped unless `--resource-group` is provided
    - 10 threads by default, randomized order
 
@@ -445,7 +445,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 

@@ -7,7 +7,7 @@ name = "iamx"
 version = "1.5.0"
 description = "Cloud IAM Permission Enumeration Tool for AWS, GCP, and Azure"
 readme = "README.md"
-license = "MIT"
+license = "GPL-3.0-only"
 requires-python = ">=3.11"
 authors = [
     { name = "Devang Solanki" }
@@ -32,7 +32,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
