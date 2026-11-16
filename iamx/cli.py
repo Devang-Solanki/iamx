@@ -874,6 +874,89 @@ def _is_admin_policy(name: str, arn: str) -> bool:
     return any(p.lower() in lower for p in _ADMIN_POLICY_PATTERNS)
 
 
+# AWS bruteforce/IAM results that are worth calling out beyond a plain permission
+# list — credential/secret disclosure or a clear path to further access.
+_AWS_HIGH_VALUE_FINDINGS = {
+    "get_account_authorization_details": "full account IAM policies are readable",
+    "secretsmanager.get_secret_value": "Secrets Manager secret values are readable",
+    "ssm.get_parameter": "SSM parameter values (often secrets) are readable",
+    "ssm.get_parameters": "SSM parameter values (often secrets) are readable",
+    "ssm.get_parameters_by_path": "SSM parameter values (often secrets) are readable",
+    "ec2.get_password_data": "Windows instance admin password data is readable",
+    "iam.get_login_profile": "console login profile details are readable",
+    "lambda.get_function": "Lambda function config is readable — env vars may contain secrets",
+    "lightsail.get_relational_database_master_user_password": "a Lightsail database master password is readable",
+    "s3.get_bucket_policy": "an S3 bucket policy is readable — check for public/overly broad access",
+    "s3control.get_bucket_policy": "an S3 bucket policy is readable — check for public/overly broad access",
+    "redshiftserverless.get_credentials": "temporary Redshift database credentials are obtainable",
+    "cognitoidentity.get_credentials_for_identity": "temporary AWS credentials for a Cognito identity are obtainable",
+}
+
+# GCP IAM permissions that grant impersonation, secret/key access, or a known
+# privilege-escalation primitive on their own.
+_GCP_HIGH_VALUE_PERMISSIONS = {
+    "resourcemanager.projects.setIamPolicy": "can directly grant itself any role on the project",
+    "iam.serviceAccounts.actAs": "can impersonate other service accounts",
+    "iam.serviceAccounts.getAccessToken": "can mint OAuth access tokens for other service accounts",
+    "iam.serviceAccounts.signBlob": "can sign as other service accounts (impersonation)",
+    "iam.serviceAccounts.signJwt": "can sign JWTs as other service accounts (impersonation)",
+    "iam.serviceAccountKeys.create": "can mint long-lived keys for other service accounts",
+    "secretmanager.versions.access": "Secret Manager secret values are readable",
+    "cloudkms.cryptoKeyVersions.useToDecrypt": "can decrypt ciphertext protected by KMS keys",
+    "compute.instances.setMetadata": "can set instance metadata — possible escalation via startup scripts",
+    "deploymentmanager.deployments.create": "Deployment Manager escalation (default SA is Editor on most projects)",
+}
+
+# Azure built-in roles whose assignment alone is a high-value finding.
+_AZURE_HIGH_VALUE_ROLE_IDS = {
+    "8e3af657-a8ff-443c-a75c-2fe8c4bcb635": "Owner",
+    "b24988ac-6180-42a0-ab88-20f7382dd24c": "Contributor",
+    "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9": "User Access Administrator",
+}
+
+
+def _collect_high_value_findings(results: dict, is_root: bool, is_azure: bool) -> list:
+    """Return a list of human-readable high-value finding strings for this result set."""
+    findings = []
+    permissions = results.get("permissions", {})
+
+    if is_root:
+        return findings
+
+    if is_azure and isinstance(permissions, dict):
+        for assignment in permissions.get("role_assignments", []) or []:
+            role_def_id = assignment.get("role_definition_id", "") or ""
+            role_guid = role_def_id.rstrip("/").split("/")[-1]
+            role_name = _AZURE_HIGH_VALUE_ROLE_IDS.get(role_guid)
+            if role_name:
+                findings.append(f"has the built-in \"{role_name}\" role assigned")
+        for op_key in permissions.get("api_operations", {}) or {}:
+            # Operation ids are inconsistent across the Azure dataset; only
+            # flag unambiguous secret-value reads to avoid noisy guesses.
+            if "getsecret" in op_key.lower().replace("_", ""):
+                findings.append(f"{op_key} succeeded — a Key Vault secret value may be readable")
+    elif isinstance(permissions, list):
+        # GCP style: flat list of granted permission strings
+        perms = {p for p in permissions if isinstance(p, str)}
+        for perm, description in _GCP_HIGH_VALUE_PERMISSIONS.items():
+            if perm in perms:
+                findings.append(f"{perm} — {description}")
+    elif isinstance(permissions, dict):
+        # AWS style: "iam" section plus a flat "service.operation" bruteforce dict
+        iam_perms = permissions.get("iam", {})
+        bruteforce_perms = permissions.get("bruteforce", {})
+        aws_perms = set()
+        if isinstance(iam_perms, dict):
+            aws_perms.update(k for k in iam_perms if not k.startswith("_"))
+        if isinstance(bruteforce_perms, dict):
+            aws_perms.update(k for k in bruteforce_perms if not k.startswith("_"))
+        for perm, description in _AWS_HIGH_VALUE_FINDINGS.items():
+            if perm in aws_perms:
+                findings.append(f"{perm} succeeded — {description}")
+
+    return findings
+
+
 def _format_text_output(results: dict) -> str:
     """Format results as human-readable text."""
     lines = []
@@ -1016,14 +1099,11 @@ def _format_text_output(results: dict) -> str:
 
     # High-value findings are shown here, right before the summary, so they
     # aren't buried above a long list of bruteforced permissions.
-    all_perms = results.get("permissions", {})
-    iam_perms = all_perms.get("iam", {}) if not is_root and isinstance(all_perms, dict) else {}
-    if isinstance(iam_perms, dict) and "get_account_authorization_details" in iam_perms:
+    high_value_findings = _collect_high_value_findings(results, is_root, is_azure)
+    if high_value_findings:
         lines.append("\n" + click.style("⚠️  High-Value Findings:", fg="yellow", bold=True))
-        lines.append(
-            "   • get_account_authorization_details succeeded — "
-            "full account IAM policies are readable"
-        )
+        for finding in high_value_findings:
+            lines.append(f"   • {finding}")
 
     privesc = results.get("privilege_escalation", {})
     if privesc.get("paths_found", 0) > 0:
