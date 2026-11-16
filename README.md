@@ -12,7 +12,7 @@ A powerful CLI tool for enumerating IAM permissions across AWS, GCP, and Azure c
 - 🔍 **AWS IAM Enumeration**: Test AWS credentials against 7,590 API operations across 427 services
 - 🔍 **GCP IAM Enumeration**: Test GCP credentials against 4,293 IAM permissions
 - 🧪 **Azure RBAC Enumeration**: Test Azure credentials against 2,324 API operations across 291 resource providers
-- 🚨 **Privilege Escalation Detection**: Automatically checks discovered AWS permissions against 66 known escalation paths (powered by [pathfinding.cloud](https://pathfinding.cloud))
+- 🚨 **Privilege Escalation Detection**: Automatically checks discovered AWS and GCP permissions against known escalation paths (powered by [pathfinding.cloud](https://pathfinding.cloud))
 - 🎯 **Service Groups**: Target specific service areas (`--group compute`, `--group security`, etc.) for faster, focused enumeration on both AWS and Azure
 - ⚡ **EC2 Write Permission Testing**: Uses AWS DryRun to confirm 46 EC2 write permissions without creating any resources
 - 🏷️ **Identity Enrichment**: Shows attached policy names, group memberships, and highlights admin-level policies
@@ -239,6 +239,8 @@ Options:
   -u, --dataset-url TEXT  URL to GCP IAM dataset JSON
   -o, --output-file PATH  Output file path (default: iamx/gcp/permissions.py)
   --safe-only             Only include safe (read-only) permissions
+  --privesc-url TEXT      URL to fetch privilege escalation paths from
+                          (default: https://pathfinding.cloud/paths.json)
   --help                  Show this message and exit.
 ```
 
@@ -362,6 +364,7 @@ Options:
 1. Uses the Cloud Resource Manager API's `testIamPermissions` method
 2. Tests 4,293 GCP IAM permissions in batches of 100
 3. Returns all permissions the credentials have on the specified project
+4. **Privilege Escalation Detection**: Checks discovered permissions against known GCP escalation paths (powered by [pathfinding.cloud](https://pathfinding.cloud)) — service account impersonation (`actAs`, `getAccessToken`), IAM self-escalation (`iam.roles.update`), and PassRole-style escalation via Cloud Functions/Cloud Run
 
 > **Note**: Requires the Cloud Resource Manager API to be enabled on the project.
 
@@ -406,11 +409,14 @@ iamx generate aws --privesc-url https://pathfinding.cloud/paths.json
 ### Update GCP Permissions
 
 ```bash
-# Generate all GCP permissions
+# Generate all GCP permissions and sync privilege escalation paths
 iamx generate gcp
 
 # Generate only safe (read-only) permissions
 iamx generate gcp --safe-only
+
+# Use a custom privesc source URL
+iamx generate gcp --privesc-url https://pathfinding.cloud/paths.json
 ```
 
 ### Update Azure Operations

@@ -652,24 +652,31 @@ def generate_aws(
     default=False,
     help="Only include safe (read-only) permissions",
 )
+@click.option(
+    "--privesc-url",
+    default="https://pathfinding.cloud/paths.json",
+    help="URL to fetch privilege escalation paths from (default: https://pathfinding.cloud/paths.json)",
+)
 @click.pass_context
 def generate_gcp(
     ctx: click.Context,
     dataset_url: str,
     output_file: str,
     safe_only: bool,
+    privesc_url: str,
 ) -> None:
     """
-    Generate GCP permissions list from IAM dataset.
+    Generate GCP permissions list from IAM dataset and update privilege escalation paths.
 
     This command downloads the GCP IAM dataset and generates a Python file
-    containing all GCP IAM permissions for testing.
+    containing all GCP IAM permissions for testing, and syncs the latest
+    privilege escalation paths from pathfinding.cloud.
 
     Source: https://github.com/iann0036/iam-dataset
 
     Examples:
 
-        # Generate all permissions
+        # Generate all permissions and update privesc paths
         iamx generate gcp
 
         # Generate only safe (read-only) permissions
@@ -681,7 +688,7 @@ def generate_gcp(
         # Custom dataset URL
         iamx generate gcp -u https://example.com/gcp-map.json
     """
-    from iamx.gcp.generator import generate_gcp_permissions
+    from iamx.gcp.generator import generate_gcp_permissions, update_privesc_paths
 
     verbose = ctx.obj.get("verbose", False)
 
@@ -708,6 +715,19 @@ def generate_gcp(
             err=True,
         )
         sys.exit(1)
+
+    click.echo(click.style("🔧 ", fg="cyan") + "Updating privilege escalation paths...")
+    click.echo(click.style("📥 ", fg="cyan") + f"Fetching from: {privesc_url}")
+    try:
+        added, updated = update_privesc_paths(url=privesc_url, verbose=verbose)
+        click.echo(
+            click.style("✅ ", fg="green")
+            + f"Privilege escalation paths — {added} added, {updated} updated."
+        )
+    except Exception as e:
+        click.echo(
+            click.style("⚠️  ", fg="yellow") + f"Privilege escalation update failed: {e}"
+        )
 
 
 @generate.command("azure")

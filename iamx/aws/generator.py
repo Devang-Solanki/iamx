@@ -433,6 +433,9 @@ def update_privesc_paths(
         eid = entry.get("id")
         if not eid:
             continue
+        # paths.json covers multiple clouds (e.g. "gcp-iam-001"); this file is AWS-only.
+        if entry.get("cloud", "aws") != "aws":
+            continue
         if eid in local_by_id:
             if local_by_id[eid] != entry:
                 local_by_id[eid] = entry

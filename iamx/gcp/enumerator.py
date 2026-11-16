@@ -9,6 +9,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from iamx.gcp.permissions import GCP_PERMISSIONS
+from iamx.gcp.privesc import check_privesc, extract_permissions
 
 
 class GCPEnumerator:
@@ -266,6 +267,22 @@ class GCPEnumerator:
             self.logger.info(
                 f"Enumeration complete. Found {len(discovered_permissions)} permissions."
             )
+
+            # Check for privilege escalation paths using discovered permissions
+            try:
+                permissions_set = extract_permissions(results)
+                privesc_matches = check_privesc(permissions_set)
+                results["privilege_escalation"] = {
+                    "paths_found": len(privesc_matches),
+                    "paths": privesc_matches,
+                }
+                if privesc_matches:
+                    self.logger.warning(
+                        f"⚠️  Found {len(privesc_matches)} potential privilege escalation path(s)!"
+                    )
+            except Exception as e:
+                results["errors"].append(f"Privilege escalation check error: {str(e)}")
+                self.logger.error(f"Privilege escalation check failed: {e}")
 
         except ImportError as e:
             error_msg = (

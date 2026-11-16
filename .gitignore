@@ -84,6 +84,7 @@ Thumbs.db
 *.json
 !pyproject.toml
 !iamx/aws/data/*.json
+!iamx/gcp/data/*.json
 aws-sdk-js/
 
 # Local entry script
