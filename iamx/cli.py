@@ -993,15 +993,6 @@ def _format_text_output(results: dict) -> str:
                 for perm in sorted(str_perms):
                     lines.append(f"   ✓ {perm}")
             elif isinstance(permissions, dict):
-                # Check for high-value IAM finding before listing permissions
-                iam_section = permissions.get("iam", {})
-                if isinstance(iam_section, dict) and "get_account_authorization_details" in iam_section:
-                    lines.append(
-                        "\n   " + click.style("⚠️  High Value: ", fg="yellow", bold=True)
-                        + "get_account_authorization_details succeeded — "
-                        + "full account IAM policies are readable"
-                    )
-
                 for service, actions in sorted(permissions.items()):
                     # Skip internal notes and the iam enumeration section
                     if service.startswith("_") or service == "iam":
@@ -1022,6 +1013,17 @@ def _format_text_output(results: dict) -> str:
                         for action, data in sorted(actions.items()):
                             if not action.startswith("_"):
                                 lines.append(f"      ✓ {action}")
+
+    # High-value findings are shown here, right before the summary, so they
+    # aren't buried above a long list of bruteforced permissions.
+    all_perms = results.get("permissions", {})
+    iam_perms = all_perms.get("iam", {}) if not is_root and isinstance(all_perms, dict) else {}
+    if isinstance(iam_perms, dict) and "get_account_authorization_details" in iam_perms:
+        lines.append("\n" + click.style("⚠️  High-Value Findings:", fg="yellow", bold=True))
+        lines.append(
+            "   • get_account_authorization_details succeeded — "
+            "full account IAM policies are readable"
+        )
 
     privesc = results.get("privilege_escalation", {})
     if privesc.get("paths_found", 0) > 0:
